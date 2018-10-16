@@ -39,11 +39,11 @@ if __name__ == '__main__':
         worker.load_data(train_file, split_ratio=train_percent)
     else:
         worker.load_data(train_file, test_path=test_file)
-    w2v_file = join(dirname(__file__), "core", "w2v_models", "w2v_model_50_for_rgnti_update_k_v1_25_3_18.model")
-    if not exists(w2v_file):
-        print("Word2Vec model file is not found")
-        exit(0)
-    worker.load_w2v(w2v_file)
+    # w2v_file = join(dirname(__file__), "core", "w2v_models", "w2v_model_50_for_rgnti_update_k_v1_25_3_18.model")
+    # if not exists(w2v_file):
+    #     print("Word2Vec model file is not found")
+    #     exit(0)
+    # worker.load_w2v(w2v_file)
     bin_val = config.get("Experiment", "binary")
     binary = bin_val == "1" or bin_val == "true"
     n_folds = config.getint("Experiment", "n_folds")
