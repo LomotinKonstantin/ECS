@@ -8,6 +8,42 @@ from core.Worker import Worker
 from datetime import datetime
 from shutil import copyfile
 
+'''
+Воркфлоу следующий:
+1. Обработать конфиг:
+    * Загрузить
+    * Провалидировать
+2. Загрузить индекс
+    Индекс имеет следующую структуру:
+    Каждая запись дополнительно включает поле path - путь к папке с текстами/векторами
+    {
+        <dataset_name1>: {
+            clear: [
+                {<preprocessing_section_of_copied_settings1>},
+                {<preprocessing_section_of_copied_settings2>},
+                {<preprocessing_section_of_copied_settings3>}
+            ],
+            vectors: [
+                {<word_embedding_section_of_copied_settings1>},
+                {<word_embedding_section_of_copied_settings3>},
+            ]
+        },
+        
+        <dataset_name2>: {
+            clear: [
+                {<preprocessing_section_of_copied_settings4>}
+            ],
+            vectors: []
+        },
+        
+        <dataset_name3>: {
+            clear: [],
+            vectors: []
+        }
+    }
+3. Согласно общей схеме получить актуальный датасет
+4. Запустить Worker
+'''
 
 if __name__ == '__main__':
     config = ValidConfig()
