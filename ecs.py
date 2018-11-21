@@ -3,7 +3,7 @@ import warnings
 warnings.filterwarnings("ignore")
 
 from interface.valid_config import ValidConfig
-from os.path import dirname, join, exists
+from os.path import dirname, join
 from core.Worker import Worker
 from datetime import datetime
 from shutil import copyfile
