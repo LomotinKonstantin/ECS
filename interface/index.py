@@ -27,7 +27,7 @@ class Index:
         new_entry = {}
         for option in parser.options(section):
             new_entry[option] = parser.get(section, option)
-        new_entry["title"] = parser.get("Experiment", "experiment_title")
+        new_entry["ds_title"] = parser.get("Experiment", "experiment_title")
         return new_entry
 
     def __get_ct_entry(self, path_to_config: str) -> dict:
@@ -100,7 +100,7 @@ class Index:
         """
         entries = self.data[dataset][entry_type]
         for entry in entries:
-            if entry["title"] == title:
+            if entry["ds_title"] == title:
                 return True
         return False
 
@@ -119,12 +119,12 @@ class Index:
         :return: True, если удалось добавить или перезаписать запись.
                  False, если такая запись уже есть и rewrite == False
         """
-        new_title = new_entry["title"]
+        new_title = new_entry["ds_title"]
         if self.__check_title_existance(dataset, entry_type, new_title):
             if rewrite:
                 for i in range(len(self.data[dataset][entry_type])):
                     entry = self.data[dataset][entry_type][i]
-                    if entry["title"] == new_title:
+                    if entry["ds_title"] == new_title:
                         self.data[dataset][entry_type][i] = new_entry
                         return True
             else:
@@ -217,9 +217,9 @@ class Index:
 
 
 if __name__ == '__main__':
-    test_json = '{"title": "exp1", "some_data": {"entry1": {"foo": "bar", "finn": "jake"}, "entry2": [42, 3.14, 2.7]}}'
+    test_json = '{"ds_title": "exp1", "some_data": {"entry1": {"foo": "bar", "finn": "jake"}, "entry2": [42, 3.14, 2.7]}}'
     loaded_dict = json.loads(test_json)
-    assert loaded_dict["title"] == "exp1", "title failed"
+    assert loaded_dict["ds_title"] == "exp1", "title failed"
     assert loaded_dict["some_data"]["entry1"]["finn"] == "jake", "finn failed"
     assert loaded_dict["some_data"]["entry2"][1] == 3.14, "pi failed"
     assert json.dumps(loaded_dict) == test_json, "dumps failed"

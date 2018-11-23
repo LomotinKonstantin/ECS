@@ -9,11 +9,11 @@ from importlib import import_module
 class ValidConfig(ConfigParser):
     LIST_DELIM = ","
     list_re = "\[.*?\]"
-    paths = ConfigParser()
+    map_config = ConfigParser()
 
     def __init__(self):
         super(ValidConfig, self).__init__()
-        self.paths.read(join(dirname(__file__), "map.ini"))
+        self.map_config.read(join(dirname(__file__), "map.ini"))
         self.optionxform = str
 
     def get_as_list(self, section, key):
@@ -103,13 +103,15 @@ class ValidConfig(ConfigParser):
         # rubricator
         self.__check_option_entry("Experiment", "rubricator")
         self.__check_value("Experiment", "rubricator", ["subj", "ipv", "rgnti"])
-        # models
-        for model in self.get_as_list("Experiment", "models"):
-            self.__assert(model in self.paths.options("SupportedModels"),
+
+    def validate_classification(self):
+        self.__check_section_existance("Classification")
+        for model in self.get_as_list("Classification", "models"):
+            self.__assert(model in self.map_config.options("SupportedModels"),
                           'Model "{}" is not supported'.format(model))
             self.__assert(model in self.sections(),
                           'No options specified for model "{}"'.format(model))
-            path = self.paths.get("SupportedModels", model)
+            path = self.map_config.get("SupportedModels", model)
             components = path.split(".")
             class_name = components[-1]
             module_name = ".".join(components[:-1])
@@ -133,6 +135,56 @@ class ValidConfig(ConfigParser):
                 self.__assert(False,
                               'Module {} has no model "{}"'.format(module_name, class_name))
 
+    def validate_preprocessing(self):
+        # Tested somehow
+        section = "Preprocessing"
+        self.__check_section_existance(section)
+        options = {"id", "title", "text",
+                   "keywords", "subj", "ipv", "rgnti",
+                   "correct", "remove_stopwords", "normalization",
+                   "language", "batch_size", "kw_delim"}
+        for key in options:
+            self.__check_option_entry(section, key)
+            value = self.get(section, key)
+            self.__assert(value != "", 'Missing value of "{}" option'.format(key))
+        batch_size = self.get("Preprocessing", "batch_size", fallback="")
+        #
+        self.__check_value(section, "remove_stopwords", ["true", "false", "0", "1"])
+        #
+        normalization_options = self.smart_parse_list(self.map_config.get("Supported", "normalization"))
+        self.__check_value(section, "normalization", normalization_options)
+        #
+        lang_options = self.smart_parse_list(self.map_config.get("Supported", "languages"))
+        self.__check_value(section, "language", lang_options)
+        #
+        self.__assert(self.__is_int(batch_size) and int(batch_size) > 0,
+                      "Invalid value of 'batch_size:'\n"
+                      "Only positive integers are supported")
+
+    def validate_word_embedding(self):
+        section = "WordEmbedding"
+        self.__check_section_existance(section)
+        options = {"vector_dim", "pooling"}
+        for key in options:
+            self.__check_option_entry(section, key)
+            value = self.get(section, key)
+            self.__assert(value != "", 'Missing value of "{}" option'.format(key))
+        vector_dim = self.get(section, "vector_dim")
+        #
+        self.__assert(self.__is_int(vector_dim) and int(vector_dim) > 0,
+                      "Invalid value of 'vector_dim:'\n"
+                      "Only positive integers are supported")
+        #
+        pooling_options = self.smart_parse_list(self.map_config.get("Supported", "pooling"))
+        self.__check_value(section, "pooling", pooling_options)
+
+    def validate_all(self):
+        self.validate_dataset()
+        self.validate_experiment()
+        self.validate_preprocessing()
+        self.validate_word_embedding()
+        self.validate_classification()
+
     def __assert(self, condition: bool, error_msg: str, leave=True):
         if not condition:
             print(error_msg)
@@ -140,19 +192,22 @@ class ValidConfig(ConfigParser):
                 sys.exit(0)
 
     def __check_existance(self, section, option):
+        self.__check_section_existance(section)
+        self.__check_option_entry(section, option)
+
+    def __check_section_existance(self, section: str):
         self.__assert(section in self.sections(),
                       'Missing "{}" section'.format(section))
-        self.__check_option_entry(section, option)
 
     def __check_option_entry(self, section, option):
         self.__assert(option in self.options(section),
-                      'Section "{}" is missing "{}" option')
+                      'Section "{}" is missing "{}" option'.format(section, option))
 
     def __check_value(self, section, option, supported: list):
         value = self.get_as_list(section, option)
         for i in value:
             self.__assert(str(i) in supported,
-                          'Value "{}" of the option "{}" is not supported.'
+                          'Value "{}" of the option "{}" is not supported.\n'
                           'Supported values: {}'.format(i, option, ", ".join(supported)))
 
     def load_class(self, classpath: str):
@@ -166,12 +221,12 @@ class ValidConfig(ConfigParser):
     def get_model_types(self):
         model_types = []
         for m in self.get_as_list("Experiment", "models"):
-            path = self.paths.get("SupportedModels", m)
+            path = self.map_config.get("SupportedModels", m)
             model_types.append(self.load_class(path))
         return model_types
 
     def get_model_type(self, model):
-        path = self.paths.get("SupportedModels", model)
+        path = self.map_config.get("SupportedModels", model)
         return self.load_class(path)
 
     def get_hyperparameters(self, model: str):
@@ -206,7 +261,6 @@ class ValidConfig(ConfigParser):
                 parsed.append(self.smart_parse_list(sl[1:-1]))
         return parsed
 
-
     def __is_int(self, value: str):
         try:
             int(value)
@@ -220,3 +274,13 @@ class ValidConfig(ConfigParser):
             return True
         except ValueError:
             return False
+
+
+if __name__ == '__main__':
+    config = ValidConfig()
+    config.read(join(dirname(__file__), "..", "settings.ini"), encoding="cp1251")
+    config.validate_dataset()
+    config.validate_experiment()
+    config.validate_preprocessing()
+    config.validate_word_embedding()
+    config.validate_classification()

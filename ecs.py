@@ -49,8 +49,7 @@ if __name__ == '__main__':
     config = ValidConfig()
     config.read(join(dirname(__file__), "settings.ini"), encoding="cp1251")
     print("Validating experiment settings...")
-    config.validate_dataset()
-    config.validate_experiment()
+    config.validate_all()
     worker = Worker()
     #########
     worker.set_lang("ru")
@@ -67,8 +66,8 @@ if __name__ == '__main__':
     data_folder = join(dirname(__file__), "datasets")
     dataset_folder = config.get("TrainingData", "dataset")
     train_file = join(data_folder, dataset_folder,
-                      config.paths.get("DatasetFiles",
-                                       dataset_folder))
+                      config.map_config.get("DatasetFiles",
+                                            dataset_folder))
     test_file = config.get("TrainingData", "test_file", fallback="")
     if test_file == "":
         train_percent = 1 - config.getint("TrainingData", "test_percent") / 100
