@@ -2,7 +2,7 @@ from configparser import ConfigParser
 import re
 import sys
 from os.path import join, exists, dirname
-from os import linesep
+from os import linesep, walk
 from importlib import import_module
 
 
@@ -33,6 +33,8 @@ class ValidConfig(ConfigParser):
         dataset = self.get(ds_section, "dataset")
         self.__assert(dataset != "",
                       'Please specify the training dataset folder name in the "dataset directory"')
+        self.__assert("train" not in dataset and "test" not in dataset,
+                      "Keywords 'train' and 'test' are reserved and cannot be used")
         ds_path = join(dirname(__file__), "..", "datasets", dataset)
         self.__assert(exists(ds_path),
                       'Dataset "{}" does not exist! Check "datasets" folder'.format(dataset))
@@ -55,6 +57,8 @@ class ValidConfig(ConfigParser):
             self.__assert(exists(test_path),
                           "Specified test file does not exist!",
                           leave=test_file != "")
+            self.__assert("train" not in test_file and "test" not in test_file,
+                          "Keywords 'train' and 'test' are reserved and cannot be used")
         if tp_option_exists:
             if test_file == "":
                 try:
@@ -77,9 +81,11 @@ class ValidConfig(ConfigParser):
         if title != "":
             self.__assert(not any(s in title for s in restricted),
                           "Experiment title cannot contain symbols {}".format(", ".join(restricted)))
+            self.__assert("train" not in title and "test" not in title,
+                          "Keywords 'train' and 'test' are reserved and cannot be used")
         # binary
         self.__check_existance("Experiment", "binary")
-        self.__check_value("Experiment", "binary", ["0", "1", "true", "false"])
+        self.__check_value("Experiment", "binary", [True, False])
         # n_folds
         self.__check_option_entry("Experiment", "n_folds")
         n_folds = self.get("Experiment", "n_folds")
@@ -149,7 +155,7 @@ class ValidConfig(ConfigParser):
             self.__assert(value != "", 'Missing value of "{}" option'.format(key))
         batch_size = self.get("Preprocessing", "batch_size", fallback="")
         #
-        self.__check_value(section, "remove_stopwords", ["true", "false", "0", "1"])
+        self.__check_value(section, "remove_stopwords", [True, False])
         #
         normalization_options = self.smart_parse_list(self.map_config.get("Supported", "normalization"))
         self.__check_value(section, "normalization", normalization_options)
@@ -164,19 +170,46 @@ class ValidConfig(ConfigParser):
     def validate_word_embedding(self):
         section = "WordEmbedding"
         self.__check_section_existance(section)
-        options = {"vector_dim", "pooling"}
-        for key in options:
-            self.__check_option_entry(section, key)
-            value = self.get(section, key)
-            self.__assert(value != "", 'Missing value of "{}" option'.format(key))
-        vector_dim = self.get(section, "vector_dim")
-        #
-        self.__assert(self.__is_int(vector_dim) and int(vector_dim) > 0,
-                      "Invalid value of 'vector_dim:'\n"
-                      "Only positive integers are supported")
-        #
-        pooling_options = self.smart_parse_list(self.map_config.get("Supported", "pooling"))
-        self.__check_value(section, "pooling", pooling_options)
+        use_model = self.get(section, "use_model", fallback="")
+        um_option_exists = use_model != ""
+        if um_option_exists:
+            reports = next(walk(join(dirname(__file__), "..", "reports")))[1]
+            self.__assert(use_model in reports, "")
+            for i in reports:
+                files = next(walk(join(dirname(__file__), "..", "reports", i)))[2]
+                for file in files:
+                    if file.split(".")[-1] == "model":
+                        return
+            options = {"vector_dim", "pooling"}
+            for key in options:
+                self.__check_option_entry(section, key)
+                value = self.get(section, key)
+                self.__assert(value != "", 'Missing value of "{}" option'.format(key))
+            vector_dim = self.get(section, "vector_dim")
+            #
+            self.__assert(self.__is_int(vector_dim) and int(vector_dim) > 0,
+                          "Invalid value of 'vector_dim:'\n"
+                          "Only positive integers are supported")
+            #
+            pooling_options = self.smart_parse_list(self.map_config.get("Supported", "pooling"))
+            self.__check_value(section, "pooling", pooling_options)
+            print("W2V model {} not found, new model will be created".format(use_model))
+        else:
+            options = {"vector_dim", "pooling"}
+            for key in options:
+                self.__check_option_entry(section, key)
+                value = self.get(section, key)
+                self.__assert(value != "", 'Missing value of "{}" option'.format(key))
+            vector_dim = self.get(section, "vector_dim")
+            #
+            self.__assert(self.__is_int(vector_dim) and int(vector_dim) > 0,
+                          "Invalid value of 'vector_dim:'\n"
+                          "Only positive integers are supported")
+            #
+            pooling_options = self.smart_parse_list(self.map_config.get("Supported", "pooling"))
+            self.__check_value(section, "pooling", pooling_options)
+            print("W2V model is not specified, new model will be created")
+
 
     def validate_all(self):
         self.validate_dataset()
@@ -206,9 +239,9 @@ class ValidConfig(ConfigParser):
     def __check_value(self, section, option, supported: list):
         value = self.get_as_list(section, option)
         for i in value:
-            self.__assert(str(i) in supported,
+            self.__assert(i in supported,
                           'Value "{}" of the option "{}" is not supported.\n'
-                          'Supported values: {}'.format(i, option, ", ".join(supported)))
+                          'Supported values: {}'.format(i, option, ", ".join(map(str, supported))))
 
     def load_class(self, classpath: str):
         components = classpath.split(".")
@@ -244,6 +277,8 @@ class ValidConfig(ConfigParser):
                 return [int(str_list)]
             elif self.__is_float(str_list):
                 return [float(str_list)]
+            elif self.__is_bool(str_list):
+                return [self.__str_to_bool(str_list)]
             return [str_list]
         parsed = []
         sublists = re.findall(self.list_re, str_list)
@@ -261,6 +296,15 @@ class ValidConfig(ConfigParser):
                 parsed.append(self.smart_parse_list(sl[1:-1]))
         return parsed
 
+    def get_as_dict(self, section: str) -> dict:
+        res = {}
+        for i in self.options(section):
+            str_val = self.get(section, i)
+            res[i] = self.smart_parse_list(str_val)
+            if len(res[i]) == 1:
+                res[i] = res[i][0]
+        return res
+
     def __is_int(self, value: str):
         try:
             int(value)
@@ -275,6 +319,15 @@ class ValidConfig(ConfigParser):
         except ValueError:
             return False
 
+    def __is_bool(self, value: str):
+        if value.lower() in ["true", "false"]:
+            return True
+        return False
+
+    def __str_to_bool(self, value: str):
+        if value.lower() == "false":
+            return False
+        return True
 
 if __name__ == '__main__':
     config = ValidConfig()

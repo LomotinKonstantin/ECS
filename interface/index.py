@@ -1,7 +1,7 @@
 import json
 import os
 from re import fullmatch
-from configparser import ConfigParser
+from interface.valid_config import ValidConfig
 
 
 class Index:
@@ -22,11 +22,10 @@ class Index:
             self.rebuild()
 
     def __form_entry(self, path_to_config: str, section: str) -> dict:
-        parser = ConfigParser()
+        parser = ValidConfig()
         parser.read(path_to_config)
         new_entry = {}
-        for option in parser.options(section):
-            new_entry[option] = parser.get(section, option)
+        new_entry = parser.get_as_dict(section)
         new_entry["ds_title"] = parser.get("Experiment", "experiment_title")
         return new_entry
 
@@ -74,6 +73,14 @@ class Index:
         :return: Признак существования индекса, bool
         """
         return os.path.exists(self.path)
+
+    def dataset_in_index(self, dataset: str) -> bool:
+        """
+        Проверяет наличие датасета в индексе
+        :param dataset: название датасета
+        :return: Признак наличия датасета в индексе, bool
+        """
+        return dataset in self.data.keys()
 
     def __get_entries(self, dataset: str, entry_type: str) -> list:
         """

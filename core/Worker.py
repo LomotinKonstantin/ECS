@@ -9,20 +9,20 @@ from gensim.models.word2vec import LineSentence
 
 import time
 import datetime
-from sys import stdout# import sys
 import os
-from itertools import product
 from itertools import zip_longest
+import warnings
 
-from sklearn.cross_validation import train_test_split
+warnings.filterwarnings("ignore")
+from sklearn.model_selection import train_test_split
 from sklearn.cross_validation import StratifiedKFold
-from sklearn.grid_search import GridSearchCV
+from sklearn.model_selection import GridSearchCV
 from sklearn.multiclass import OneVsRestClassifier
 
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 from sklearn.metrics import confusion_matrix
 
-from Codes_helper import Codes_helper
+from core.Codes_helper import Codes_helper
 # from .Codes_helper import Codes_helper
 
 class Worker():       
@@ -123,12 +123,17 @@ class Worker():
                 train_index, test_index = train_test_split(data.index.unique(), 
                                                            test_size=1-split_ratio)
                 self.data_train, self.data_test = data.loc[train_index], data.loc[test_index]
-            if   '_sum'  in os.path.split(train_path)[1]:
+            print(os.path.split(train_path)[-1])
+            if   '_sum'  in os.path.split(train_path)[-1]:
                 self.conv_type = 'sum'
-            elif '_max'  in os.path.split(train_path)[1]:
+            elif '_max'  in os.path.split(train_path)[-1]:
                 self.conv_type = 'max'
-            elif '_mean' in os.path.split(train_path)[1]:
+            elif '_mean' in os.path.split(train_path)[-1]:
                 self.conv_type = 'mean'
+            if "_ru" in os.path.split(train_path)[-1]:
+                self.set_lang("ru")
+            elif "_en" in os.path.split(train_path)[-1]:
+                self.set_lang("en")
             return True
         else:
             print('Please specify existing train data path.')
