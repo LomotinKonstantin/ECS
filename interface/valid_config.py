@@ -174,11 +174,12 @@ class ValidConfig(ConfigParser):
         um_option_exists = use_model != ""
         if um_option_exists:
             reports = next(walk(join(dirname(__file__), "..", "reports")))[1]
-            self.__assert(use_model in reports, "")
+            self.__assert(use_model in reports, "Cannot find model {}".format(use_model))
             for i in reports:
                 files = next(walk(join(dirname(__file__), "..", "reports", i)))[2]
                 for file in files:
                     if file.split(".")[-1] == "model":
+                        print("W2V model '{}' found".format(use_model))
                         return
             options = {"vector_dim", "pooling"}
             for key in options:
@@ -210,13 +211,17 @@ class ValidConfig(ConfigParser):
             self.__check_value(section, "pooling", pooling_options)
             print("W2V model is not specified, new model will be created")
 
-
     def validate_all(self):
         self.validate_dataset()
+        print("Dataset settings are valid")
         self.validate_experiment()
+        print("Experiment settings are valid")
         self.validate_preprocessing()
+        print("Preprocessing settings are valid")
         self.validate_word_embedding()
+        print("WordEmbedding settings are valid")
         self.validate_classification()
+        print("Classification settings are valid")
 
     def __assert(self, condition: bool, error_msg: str, leave=True):
         if not condition:
@@ -328,6 +333,7 @@ class ValidConfig(ConfigParser):
         if value.lower() == "false":
             return False
         return True
+
 
 if __name__ == '__main__':
     config = ValidConfig()

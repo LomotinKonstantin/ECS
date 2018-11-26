@@ -123,7 +123,6 @@ class Worker():
                 train_index, test_index = train_test_split(data.index.unique(), 
                                                            test_size=1-split_ratio)
                 self.data_train, self.data_test = data.loc[train_index], data.loc[test_index]
-            print(os.path.split(train_path)[-1])
             if   '_sum'  in os.path.split(train_path)[-1]:
                 self.conv_type = 'sum'
             elif '_max'  in os.path.split(train_path)[-1]:

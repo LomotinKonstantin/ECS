@@ -135,15 +135,20 @@ if __name__ == '__main__':
     if test_file != "":
         test_lst = []
         if data_type == "vectors":
-            test_lst = list(filter(lambda a: "test" in a and "single_theme" not in a, dataset_files))
+            test_lst = list(filter(lambda a: "test" in a
+                                             and "single_theme" not in a
+                                             and a[-4:] == ".csv", dataset_files))
         else:
-            test_lst = list(filter(lambda a: a.startswith(test_file.split(".")[-2]), dataset_files))
+            test_lst = list(filter(lambda a: a.startswith(test_file.split(".")[-2])
+                                             and a[-4:] == ".csv", dataset_files))
         test_file = test_lst[0]
         dataset_files.remove(test_file)
         test_file = join(actual_data_path, test_file)
 
     if data_type == "vectors":
-        train_lst = list(filter(lambda a: "test" not in a and "single_theme" not in a, dataset_files))
+        train_lst = list(filter(lambda a: "test" not in a
+                                          and "single_theme" not in a
+                                          and a[-4:] == ".csv", dataset_files))
         train_file = join(actual_data_path, train_lst[0])
     else:
         train_file = join(actual_data_path, dataset_files[0])
@@ -157,6 +162,7 @@ if __name__ == '__main__':
         print("Эксперимент с таким названием уже существует")
         exit(0)
     result_path = join(dirname(__file__), "reports", title)
+    use_model = config.get("WordEmbedding", "use_model", fallback="")
     if data_type == "raw":
         # Предобработка
         preprocessor = Preprocessor()
@@ -186,11 +192,9 @@ if __name__ == '__main__':
         copyfile(join(dirname(__file__), "settings.ini"),
                  join(clear_folder, "settings.ini"))
         # Если надо, создаем новую модель в2в
-        use_model = config.get("WordEmbedding", "use_model", fallback="")
         we_settings = config.get_as_dict("WordEmbedding")
         vector_dim = we_settings["vector_dim"]
         pooling = we_settings["pooling"]
-        w2v_model = None
         data_loaded = False
         if use_model == "":
             print("Creating Word2Vec model")
@@ -227,10 +231,14 @@ if __name__ == '__main__':
         worker.create_w2v_vectors()
         copyfile(join(dirname(__file__), "settings.ini"),
                  join(vector_folder, "settings.ini"))
+        if use_model == "":
+            model_file = list(filter(lambda a: a.split(".")[-1] == "model",
+                                     next(walk(result_path))[2]))[0]
+            copyfile(join(result_path, model_file),
+                     join(vector_folder, split(model_file)[-1]))
     elif data_type == "clear":
         print("Cached preprocessed dataset found")
         use_model = config.get("WordEmbedding", "use_model", fallback="")
-        w2v_model = None
         data_loaded = False
         if use_model == "":
             print("Creating Word2Vec model")
@@ -267,6 +275,11 @@ if __name__ == '__main__':
         worker.create_w2v_vectors()
         copyfile(join(dirname(__file__), "settings.ini"),
                  join(vector_folder, "settings.ini"))
+        if use_model == "":
+            model_file = list(filter(lambda a: a.split(".")[-1] == "model",
+                                     next(walk(result_path))[2]))[0]
+            copyfile(join(result_path, model_file),
+                     join(vector_folder, split(model_file)[-1]))
     else:
         print("Cached vectors found")
         if test_file == "":
@@ -278,6 +291,11 @@ if __name__ == '__main__':
     # Учим классификатор
     if not worker.set_res_folder(result_path):
         exit(0)
+    if use_model == "" and data_type == "vectors":
+        model_file = list(filter(lambda a: a.split(".")[-1] == "model",
+                                 next(walk(actual_data_path))[2]))[0]
+        copyfile(join(actual_data_path, model_file),
+                 join(result_path, split(model_file)[-1]))
     worker.set_lang(language)
     worker.set_conv_type(pooling)
     binary = config.get_as_dict("Experiment")["binary"]
@@ -290,6 +308,11 @@ if __name__ == '__main__':
             ModelType = config.get_model_type(model)
             instance = ModelType()
             hypers = config.get_hyperparameters(model)
+            worker.data_train = worker.data_train.rename(columns=str)
+            try:
+                worker.data_test = worker.data_test.rename(columns=str)
+            except Exception:
+                pass
             worker.search_for_clf(model=instance,
                                   parameters=hypers,
                                   jobs=threads,
