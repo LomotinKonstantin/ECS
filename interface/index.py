@@ -1,4 +1,4 @@
-import json
+# import json
 import os
 from re import fullmatch
 from interface.valid_config import ValidConfig
@@ -9,17 +9,17 @@ class Index:
         self.path = os.path.join(os.path.dirname(__file__), "..", "datasets", "index.json")
         self.data = None
 
-    def load(self) -> None:
-        """
-        Загружает индекс. Если файла нет, вызывается rebuild.
-
-        :return: None
-        """
-        if self.exists():
-            self.data = json.load(open(self.path))
-        else:
-            print("Repairing index")
-            self.rebuild()
+    # def load(self) -> None:
+    #     """
+    #     Загружает индекс. Если файла нет, вызывается rebuild.
+    #
+    #     :return: None
+    #     """
+    #     if self.exists():
+    #         self.data = json.load(open(self.path))
+    #     else:
+    #         print("Repairing index")
+    #         self.rebuild()
 
     def __form_entry(self, path_to_config: str, section: str) -> dict:
         parser = ValidConfig()
@@ -35,9 +35,9 @@ class Index:
     def __get_vectors_entry(self, path_to_config: str) -> dict:
         return self.__form_entry(path_to_config, "WordEmbedding")
 
-    def rebuild(self) -> None:
+    def build(self) -> None:
         """
-        Перестраивает индекс.
+        Строит индекс.
         :return: None
         """
         index = {}
@@ -64,7 +64,7 @@ class Index:
                 "vectors": vectors
             }
         self.data = index
-        json.dump(self.data, open(self.path, "w"), indent=4)
+        # json.dump(self.data, open(self.path, "w"), indent=4)
 
     def exists(self) -> bool:
         """
@@ -223,15 +223,15 @@ class Index:
         return self.__add_entry(dataset, "vectors", new_entry, rewrite)
 
 
-if __name__ == '__main__':
-    test_json = '{"ds_title": "exp1", "some_data": {"entry1": {"foo": "bar", "finn": "jake"}, "entry2": [42, 3.14, 2.7]}}'
-    loaded_dict = json.loads(test_json)
-    assert loaded_dict["ds_title"] == "exp1", "title failed"
-    assert loaded_dict["some_data"]["entry1"]["finn"] == "jake", "finn failed"
-    assert loaded_dict["some_data"]["entry2"][1] == 3.14, "pi failed"
-    assert json.dumps(loaded_dict) == test_json, "dumps failed"
-    print("Json module works correctly")
-    index = Index()
-    index.load()
-    print(index.path)
-    print(json.dumps(index.data, sort_keys=True, indent=4))
+# if __name__ == '__main__':
+#     test_json = '{"ds_title": "exp1", "some_data": {"entry1": {"foo": "bar", "finn": "jake"}, "entry2": [42, 3.14, 2.7]}}'
+#     loaded_dict = json.loads(test_json)
+#     assert loaded_dict["ds_title"] == "exp1", "title failed"
+#     assert loaded_dict["some_data"]["entry1"]["finn"] == "jake", "finn failed"
+#     assert loaded_dict["some_data"]["entry2"][1] == 3.14, "pi failed"
+#     assert json.dumps(loaded_dict) == test_json, "dumps failed"
+#     print("Json module works correctly")
+#     index = Index()
+#     index.load()
+#     print(index.path)
+#     print(json.dumps(index.data, sort_keys=True, indent=4))

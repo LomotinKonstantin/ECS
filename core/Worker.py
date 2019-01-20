@@ -15,7 +15,7 @@ import warnings
 
 warnings.filterwarnings("ignore")
 from sklearn.model_selection import train_test_split
-from sklearn.cross_validation import StratifiedKFold
+from sklearn.model_selection import StratifiedKFold
 from sklearn.model_selection import GridSearchCV
 from sklearn.multiclass import OneVsRestClassifier
 
@@ -636,7 +636,11 @@ class Worker():
         X_train, X_test, y_train, y_test = self.create_sets()
         self.__check_conv_type()
         self.__check_lang()
-        skf = StratifiedKFold(y_train, shuffle=True, n_folds=skf_folds)
+        skf = StratifiedKFold(
+            # TODO: wtf
+            # y_train,
+            shuffle=True,
+            n_splits=skf_folds)
         p = parameters.copy()
         if OneVsAll:
             for i in list(p.keys()):

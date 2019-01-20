@@ -173,14 +173,14 @@ class ValidConfig(ConfigParser):
         use_model = self.get(section, "use_model", fallback="")
         um_option_exists = use_model != ""
         if um_option_exists:
-            reports = next(walk(join(dirname(__file__), "..", "reports")))[1]
-            self.__assert(use_model in reports, "Cannot find model {}".format(use_model))
-            for i in reports:
-                files = next(walk(join(dirname(__file__), "..", "reports", i)))[2]
-                for file in files:
-                    if file.split(".")[-1] == "model":
-                        print("W2V model '{}' found".format(use_model))
-                        return
+            # reports = next(walk(join(dirname(__file__), "..", "reports")))[1]
+            self.__assert(exists(use_model), "Cannot find model {}".format(use_model))
+            # for i in reports:
+            #     files = next(walk(join(dirname(__file__), "..", "reports", i)))[2]
+            #     for file in files:
+            #         if file.split(".")[-1] == "model":
+            #             print("W2V model '{}' found".format(use_model))
+            #             return
             options = {"vector_dim", "pooling"}
             for key in options:
                 self.__check_option_entry(section, key)

@@ -10,6 +10,7 @@ from os import walk, mkdir
 from core.Worker import Worker
 from datetime import datetime
 from shutil import copyfile
+from argparse import ArgumentParser
 
 '''
 Воркфлоу следующий:
@@ -69,8 +70,8 @@ def append_to_fname(fname: str, append: str) -> str:
     return ".".join(components)
 
 
-def experiment_exists(title: str) -> bool:
-    return title in next(walk(join(dirname(__file__), "reports")))[1]
+# def experiment_exists(title: str) -> bool:
+#     return title in next(walk(join(dirname(__file__), "reports")))[1]
 
 
 def recognize_language(file: str, encoding="utf8", n_lines=10) -> str:
@@ -80,18 +81,34 @@ def recognize_language(file: str, encoding="utf8", n_lines=10) -> str:
     return p.recognize_language(text_sample)
 
 
+def add_args(argparser: ArgumentParser):
+    argparser.add_argument("exp_path",
+                           type=str,
+                           help="Full path to the folder with settings.ini file",)
+
+
 if __name__ == '__main__':
+    # Получаем аргументы командной строки
+    argparser = ArgumentParser()
+    add_args(argparser)
+    args = argparser.parse_args()
+    exp_path = args.exp_path
+    settings_path = join(exp_path, "settings.ini")
+    if not exists(settings_path):
+        print("No settings.ini file found in ", exp_path)
+        exit(0)
     # Загружаем и проверяем конфиг
     config = ValidConfig()
-    config.read(join(dirname(__file__), "settings.ini"), encoding="cp1251")
+    config.read(settings_path, encoding="cp1251")
     print("Validating experiment settings...")
     config.validate_all()
+    print("=" * 20, "Validation OK", "=" * 20)
     # Создаем рабочего
     worker = Worker()
     # Загружаем индекс и датасет
     index = Index()
-    index.load()
-    index.rebuild()
+    # index.load()
+    index.build()
     data_folder = join(dirname(__file__), "datasets")
     dataset_title = config.get("TrainingData", "dataset")
     vec_list = index.vectors_list(dataset_title)
@@ -100,14 +117,17 @@ if __name__ == '__main__':
     we_settings = config.get_as_dict("WordEmbedding")
     vector_dim = we_settings["vector_dim"]
     pooling = we_settings["pooling"]
+    use_model = config.get("WordEmbedding", "use_model", fallback="")
+    w2v_exists = exists(use_model)
     # Сразу определяем язык
     language = config.get("Preprocessing", "language")
     if language == "auto":
         # Для распознавания языка грузим 10 первых строк
         file = next(walk(join(data_folder, dataset_title)))[2][0]
-        language = recognize_language(join(data_folder, dataset_title, file), encoding="cp1251")
+        language = recognize_language(join(data_folder, dataset_title, file),
+                                      encoding="cp1251", n_lines=10)
     print("Language:", language)
-    if len(vec_list) != 0:
+    if len(vec_list) != 0 and not w2v_exists:
         we_settings = config.get_as_dict("WordEmbedding")
         for entry in vec_list:
             if dicts_equal(we_settings, entry, ignore_keys=["path", "ds_title"]):
@@ -158,11 +178,9 @@ if __name__ == '__main__':
     if title.strip() == "":
         title = datetime.today().strftime("%d-%b-%Y___%X")
         title = title.replace(":", "-")
-    if experiment_exists(title):
-        print("Эксперимент с таким названием уже существует")
-        exit(0)
-    result_path = join(dirname(__file__), "reports", title)
-    use_model = config.get("WordEmbedding", "use_model", fallback="")
+    # if experiment_exists(title):
+    #     print("Эксперимент с таким названием уже существует")
+    #     exit(0)
     if data_type == "raw":
         # Предобработка
         preprocessor = Preprocessor()
@@ -189,17 +207,19 @@ if __name__ == '__main__':
                                          clear_test_file,
                                          remove_formulas=False,
                                          **pp_args)
-        copyfile(join(dirname(__file__), "settings.ini"),
+        copyfile(settings_path,
                  join(clear_folder, "settings.ini"))
         # Если надо, создаем новую модель в2в
         we_settings = config.get_as_dict("WordEmbedding")
         vector_dim = we_settings["vector_dim"]
         pooling = we_settings["pooling"]
         data_loaded = False
-        if use_model == "":
+        if use_model == "" or not w2v_exists:
+            if not w2v_exists:
+                print("Model {} not found".format(use_model))
             print("Creating Word2Vec model")
             worker.set_lang(language)
-            worker.set_res_folder(result_path)
+            worker.set_res_folder(exp_path)
             if clear_test_file != "":
                 worker.load_data(clear_train_file, test_path=clear_test_file)
             else:
@@ -209,12 +229,14 @@ if __name__ == '__main__':
             worker.create_w2v_model(vector_dim)
         else:
             # Ищем такую модель
-            actual_w2v_path = ""
-            for file in next(walk(join(dirname(__file__), "reports", use_model)))[2]:
-                if file.split(".")[-1] == "model":
-                    actual_w2v_path = join(dirname(__file__), "reports", use_model, file)
-            if actual_data_path == "":
-                print("Что-то пошло не так. Эта надпись не должна была появиться")
+            # Для совместимости после упрощения
+            actual_w2v_path = use_model
+            # for file in next(walk(join(exp_path, use_model)))[2]:
+            #     if file.split(".")[-1] == "model":
+            #         actual_w2v_path = join(exp_path, "reports", use_model, file)
+            # if actual_data_path == "":
+            #     print("Что-то пошло не так. Эта надпись не должна была появиться")
+            #     exit(1)
             worker.load_w2v(actual_w2v_path)
         # Векторизируем
         vector_folder = join(actual_data_path, title + "_vectors")
@@ -229,21 +251,23 @@ if __name__ == '__main__':
         worker.set_conv_type(pooling)
         print("Creating vectors")
         worker.create_w2v_vectors()
-        copyfile(join(dirname(__file__), "settings.ini"),
+        copyfile(settings_path,
                  join(vector_folder, "settings.ini"))
-        if use_model == "":
+        if use_model == "" or not w2v_exists:
             model_file = list(filter(lambda a: a.split(".")[-1] == "model",
-                                     next(walk(result_path))[2]))[0]
-            copyfile(join(result_path, model_file),
+                                     next(walk(exp_path))[2]))[0]
+            copyfile(join(exp_path, model_file),
                      join(vector_folder, split(model_file)[-1]))
+        else:
+            copyfile(use_model, join(vector_folder, split(use_model)[-1]))
     elif data_type == "clear":
         print("Cached preprocessed dataset found")
-        use_model = config.get("WordEmbedding", "use_model", fallback="")
+        # use_model = config.get("WordEmbedding", "use_model", fallback="")
         data_loaded = False
-        if use_model == "":
+        if use_model == "" or not w2v_exists:
             print("Creating Word2Vec model")
             worker.set_lang(language)
-            worker.set_res_folder(result_path)
+            worker.set_res_folder(exp_path)
             if test_file != "":
                 worker.load_data(train_file, test_path=test_file)
             else:
@@ -253,12 +277,13 @@ if __name__ == '__main__':
             worker.create_w2v_model(vector_dim)
         else:
             # Ищем такую модель
-            actual_w2v_path = ""
-            for file in next(walk(join(dirname(__file__), "reports", use_model)))[2]:
-                if file.split(".")[-1] == "model":
-                    actual_w2v_path = join(dirname(__file__), "reports", use_model, file)
-            if actual_data_path == "":
-                print("Что-то пошло не так. Эта надпись не должна была появиться")
+            actual_w2v_path = use_model
+            # for file in next(walk(join(exp_path, "reports", use_model)))[2]:
+            #     if file.split(".")[-1] == "model":
+            #         actual_w2v_path = join(exp_path, "reports", use_model, file)
+            # if actual_data_path == "":
+            #     print("Что-то пошло не так. Эта надпись не должна была появиться")
+            #     exit(1)
             worker.load_w2v(actual_w2v_path)
         # Векторизируем
         vector_folder = join(data_folder, dataset_title, title + "_vectors")
@@ -273,13 +298,15 @@ if __name__ == '__main__':
         worker.set_conv_type(pooling)
         print("Создание векторов")
         worker.create_w2v_vectors()
-        copyfile(join(dirname(__file__), "settings.ini"),
+        copyfile(settings_path,
                  join(vector_folder, "settings.ini"))
-        if use_model == "":
+        if use_model == "" or not w2v_exists:
             model_file = list(filter(lambda a: a.split(".")[-1] == "model",
-                                     next(walk(result_path))[2]))[0]
-            copyfile(join(result_path, model_file),
+                                     next(walk(exp_path))[2]))[0]
+            copyfile(join(exp_path, model_file),
                      join(vector_folder, split(model_file)[-1]))
+        else:
+            copyfile(use_model, join(vector_folder, split(use_model)[-1]))
     else:
         print("Cached vectors found")
         if test_file == "":
@@ -289,13 +316,13 @@ if __name__ == '__main__':
             worker.load_data(train_file, test_path=test_file)
 
     # Учим классификатор
-    if not worker.set_res_folder(result_path):
+    if not worker.set_res_folder(exp_path):
         exit(0)
-    if use_model == "" and data_type == "vectors":
-        model_file = list(filter(lambda a: a.split(".")[-1] == "model",
-                                 next(walk(actual_data_path))[2]))[0]
-        copyfile(join(actual_data_path, model_file),
-                 join(result_path, split(model_file)[-1]))
+    # if (use_model == "" or not w2v_exists) and data_type == "vectors":
+    #     model_file = list(filter(lambda a: a.split(".")[-1] == "model",
+    #                              next(walk(actual_data_path))[2]))[0]
+    #     copyfile(join(actual_data_path, model_file),
+    #              join(exp_path, split(model_file)[-1]))
     worker.set_lang(language)
     worker.set_conv_type(pooling)
     binary = config.get_as_dict("Experiment")["binary"]
@@ -318,4 +345,3 @@ if __name__ == '__main__':
                                   jobs=threads,
                                   OneVsAll=binary,
                                   skf_folds=n_folds)
-    copyfile(join(dirname(__file__), "settings.ini"), join(result_path, "settings.ini"))
