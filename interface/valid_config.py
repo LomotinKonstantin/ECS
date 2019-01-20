@@ -83,6 +83,11 @@ class ValidConfig(ConfigParser):
                           "Experiment title cannot contain symbols {}".format(", ".join(restricted)))
             self.__assert("train" not in title and "test" not in title,
                           "Keywords 'train' and 'test' are reserved and cannot be used")
+        # result location
+        # self.__check_existance("Experiment", "result_location")
+        # result_location = self.get("Experiment", "result_location", fallback="")
+        # self.__assert(exists(result_location),
+        #               "Result folder '{}' does not exist".format(result_location))
         # binary
         self.__check_existance("Experiment", "binary")
         self.__check_value("Experiment", "binary", [True, False])
