@@ -75,7 +75,7 @@ class TimeTracer:
 
     def check(self) -> float:
         res = time() - self.time
-        self.time = time();
+        self.time = time()
         return res
 
 
@@ -254,8 +254,10 @@ class Preprocessor:
             return None
         # res = text
         self.last_language = lang
+        res = text
         print("Removing emails...")
-        res = self.__remove_email(text)
+        res = self.__remove_email(res)
+        # print(self.delim in res, type(res))
         # print("Removing $$...$$")
         # res = self.__remove_double_formulas(res)
         if remove_formulas:
@@ -263,16 +265,26 @@ class Preprocessor:
             res = self.__remove_single_formulas(res)
         print("Removing markdown")
         res = self.__remove_md(res)
+        # print(self.delim in res, type(res))
         if remove_stopwords:
             print("Dense...")
             res = self.__dense(res)
+            # print(self.delim in res, type(res))
             print("Removing stopwords")
             res = self.__remove_stopwords(res.lower(), lang)
+            # print(self.delim in res, type(res))
         print("Some beauty...")
         res = self.__beautify(res)
+        # with open("log.txt", "w", encoding="utf8") as f:
+        #     f.write(res)
+        # print(self.delim in res, type(res))
         if normalization != "no":
             print("Normalization...")
             res = Normalizer(normalization, lang).normalize(res)
+            res = re.sub(" ".join(self.delim).strip(), self.delim, res)
+            print(self.delim in res, type(res))
+            # with open("log.txt", "w", encoding="utf-8") as f:
+            #     f.write(res)
         # print("Removing widow '-'...")
         # res = re.sub("\\s-\\s", "-", res)
         print("And finally done!")
