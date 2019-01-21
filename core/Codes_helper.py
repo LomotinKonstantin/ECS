@@ -1,13 +1,19 @@
 import os
 import pandas as pd
 
+
 class Codes_helper:
-    
-    def __init__(self, ipv_name = None, ipv_change = None):
+    def __init__(self, ipv_name=None, ipv_change=None, clear_math=True):
         self.set_ipv_codes(ipv_name)
         self.set_ipv_change(ipv_change)
-        self.subj_codes = ['e1', 'e2', 'e3', 'e4', 'e5', 'e7', 'e9',
-                           'f1', 'f2', 'f3', 'f4', 'f5', 'f7', 'f8', 'f9'] 
+        self.clear_math = clear_math
+        if clear_math:
+            print('!!! Math')
+            self.subj_codes = ['e1', 'e2', 'e3', 'e4', 'e5', 'e7', 'e9',
+                               'f1', 'f2', 'f3', 'f4', 'f5', 'f7', 'f8', 'f9']
+        else:
+            self.subj_codes = ['e1', 'e2', 'e3', 'e4', 'e5', 'e7', 'e8', 'e9',
+                               'f1', 'f2', 'f3', 'f4', 'f5', 'f7', 'f8', 'f9']
     
     def clear_null(self, data, column_name):
         data.index.name = 'index'
@@ -25,15 +31,15 @@ class Codes_helper:
         """
         if ipv_name and os.path.exists(ipv_name):
             self.ipv_codes = list(pd.read_csv(ipv_name, sep='\t', header=None)[0])
-            math = []
-            for i in self.ipv_codes:
-                if i.startswith('13'):
-                    math += [i]
-            self.ipv_codes = list(set(self.ipv_codes)-set(math))
+            if self.clear_math:
+                math = []
+                for i in self.ipv_codes:
+                    if i.startswith('13'):
+                        math += [i]
+                self.ipv_codes = list(set(self.ipv_codes)-set(math))
         else:
             self.ipv_codes = None
-    
-    
+
     def set_ipv_change(self, ipv_change):
         """
         Loads ipv changes file if path is valid.
@@ -56,18 +62,25 @@ class Codes_helper:
 
         Args:
         data          -- pd.DataFrame with ipv column.
+        clear_math    -- bollean parameter. If True math SRSTI (13) will be cleared.
         """
         data = self.clear_null(data, 'ipv')
         for i in self.ipv_change.index:
             temp = list(self.ipv_change.loc[i])
             data.ipv[data.ipv == temp[0]] = temp[1]
-        math = []
-        for i in self.ipv_codes:
-            if i.startswith('13'):
-                math += [i]
-        codes = list(set(self.ipv_codes)-set(math))
-        for i in list(set(list(data.ipv.unique()))-set(codes)):
-            data = data.drop(data[data.ipv == i].index, axis=0)
+        codes = list(set(self.ipv_codes))
+        # if self.clear_math:
+        #     math = []
+        #     for i in self.ipv_codes:
+        #         if i.startswith('13'):
+        #             math += [i]
+        #     codes = list(set(self.ipv_codes)-set(math))
+        clear = list(set(list(data.ipv.unique()))-set(codes))
+        if clear:
+            for i in list(set(list(data.ipv.unique()))-set(codes)):
+                idx = data[data.ipv == i].index
+                if idx.size == 0:
+                    data = data.drop(idx, axis=0)
         return data
     
     def change_subj(self, data):
@@ -103,8 +116,7 @@ class Codes_helper:
             print('Name must be SUBJ or IPV')
             return None
         return s
-    
-    
+
     def cut_rgnti(self, data):
         """
         Transforms rgnti cide into xx.xx format.

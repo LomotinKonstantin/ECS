@@ -105,6 +105,7 @@ if __name__ == '__main__':
     print("=" * 20, "Validation OK", "=" * 20)
     # Создаем рабочего
     worker = Worker()
+    worker.set_math(True)
     # Загружаем индекс и датасет
     index = Index()
     # index.load()
@@ -343,5 +344,5 @@ if __name__ == '__main__':
             worker.search_for_clf(model=instance,
                                   parameters=hypers,
                                   jobs=threads,
-                                  OneVsAll=binary,
+                                  oneVsAll=binary,
                                   skf_folds=n_folds)
