@@ -74,9 +74,14 @@ def append_to_fname(fname: str, append: str) -> str:
 #     return title in next(walk(join(dirname(__file__), "reports")))[1]
 
 
-def recognize_language(file: str, encoding="utf8", n_lines=10) -> str:
-    with open(file, encoding=encoding) as file:
-        text_sample = " ".join([next(file) for _ in range(n_lines)])
+def recognize_language(filename: str, encoding="utf8", n_lines=10) -> str:
+    chunk = []
+    with open(filename, encoding=encoding) as file:
+        for n, line in enumerate(file):
+            chunk.append(line)
+            if line == n_lines - 1:
+                break
+    text_sample = " ".join(chunk)
     p = Preprocessor()
     return p.recognize_language(text_sample)
 
