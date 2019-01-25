@@ -341,6 +341,10 @@ if __name__ == '__main__':
             ModelType = config.get_model_type(model)
             instance = ModelType()
             hypers = config.get_hyperparameters(model)
+            #
+            if model == "svm":
+                hypers["probability"] = [True]
+            #
             worker.data_train = worker.data_train.rename(columns=str)
             try:
                 worker.data_test = worker.data_test.rename(columns=str)
@@ -350,4 +354,5 @@ if __name__ == '__main__':
                                   parameters=hypers,
                                   jobs=threads,
                                   oneVsAll=binary,
-                                  skf_folds=n_folds)
+                                  skf_folds=n_folds,
+                                  description=model)

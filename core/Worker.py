@@ -11,6 +11,7 @@ import datetime
 import os
 from itertools import zip_longest
 import warnings
+import re
 
 warnings.filterwarnings("ignore")
 from sklearn.model_selection import train_test_split
@@ -38,7 +39,7 @@ class Worker():
                  name_train = None, 
                  name_test  = None, 
                  res_folder = None,
-                 clear_math=True):
+                 clear_math = True):
         self.w2v_model  = w2v_model
         self.w2v_size   = w2v_size
         self.lang       = lang
@@ -135,6 +136,9 @@ class Worker():
                 self.set_lang("ru")
             elif "_en" in os.path.split(train_path)[-1]:
                 self.set_lang("en")
+            s = re.findall('(?<=sum|ean|max)(\d+)', train_path)
+            if s:
+                self.w2v_size = int(s[0])
             return True
         else:
             print('Please specify existing train data path.')
@@ -936,7 +940,7 @@ class Worker():
         
     ########################################################
     
-    def __save_file(self, name, save_data):
+    def __save_file(self, name, save_data, check_path=False):
         """
         Saves the data with the given file name.
 
@@ -945,6 +949,12 @@ class Worker():
         file_type   -- string/DataFrame/dict{int or str:pd.DataFrame}/w2v model/clf model for saving.
         """
         path = os.path.split(name)[0]
+        if check_path:
+            while not os.path.exists(path):
+                print(name)
+                print('Not a valid path. Please enter full name:')
+                name = input()
+                path = os.path.split(name)[0]
         if os.path.exists(path):
             if   type(save_data) == dict:
                 writer = pd.ExcelWriter(name, engine='xlsxwriter')
@@ -965,7 +975,7 @@ class Worker():
                 joblib.dump(save_data, name)
             return True
         else:
-            print('Not a valid name.')
+            print('Something went wrong.')
             return False
     
     # check_w2v_model()
