@@ -660,8 +660,8 @@ class Worker():
             model = OneVsRestClassifier(model)
         gs = False
         not_gs_parameters = {}
-        for i in parameters.keys():
-            if len(parameters[i]) > 1:
+        for i in p.keys():
+            if len(p[i]) > 1:
                 gs = True
                 gs_clf = GridSearchCV(estimator=model,
                                       param_grid=p,
@@ -673,7 +673,7 @@ class Worker():
                 best_parameters = gs_clf.best_estimator_.get_params()
                 break
             else:
-                not_gs_parameters[i] = parameters[i][0]
+                not_gs_parameters[i] = p[i][0]
         if gs == False:
             best_parameters = not_gs_parameters
         clf, clf_name, stats = self.create_clf(model, 
