@@ -323,7 +323,7 @@ if __name__ == '__main__':
         w2v_copy_src = ""
         if use_model == "" or not w2v_exists:
             if not w2v_exists:
-                print("Model {} not found. This parameter will be ignored".format(use_model))
+                print("Model {} not found".format(use_model))
             for file in listdir(dirname(train_file)):
                 if file.endswith(".model"):
                     w2v_copy_src = join(dirname(train_file), file)
