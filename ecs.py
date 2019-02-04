@@ -6,7 +6,7 @@ from interface.valid_config import ValidConfig
 from interface.index import Index
 from preprocessor.Preprocessor2 import Preprocessor
 from os.path import dirname, join, exists, split
-from os import walk, mkdir
+from os import walk, mkdir, listdir
 from core.Worker import Worker
 from datetime import datetime
 from shutil import copyfile
@@ -320,7 +320,19 @@ if __name__ == '__main__':
             worker.load_data(train_file, split_ratio=train_percent)
         else:
             worker.load_data(train_file, test_path=test_file)
-
+        w2v_copy_src = ""
+        if use_model == "" or not w2v_exists:
+            if not w2v_exists:
+                print("Model {} not found. This parameter will be ignored".format(use_model))
+            for file in listdir(dirname(train_file)):
+                if file.endswith(".model"):
+                    w2v_copy_src = join(dirname(train_file), file)
+        else:
+            w2v_copy_src = use_model
+        if exists(w2v_copy_src):
+            copyfile(w2v_copy_src, join(exp_path, split(train_file)[-1]))
+        else:
+            print("Error: specified model {} does not exist".format(w2v_copy_src))
     # Учим классификатор
     if not worker.set_res_folder(exp_path):
         exit(0)
