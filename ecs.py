@@ -330,7 +330,7 @@ if __name__ == '__main__':
         else:
             w2v_copy_src = use_model
         if exists(w2v_copy_src):
-            copyfile(w2v_copy_src, join(exp_path, split(train_file)[-1]))
+            copyfile(w2v_copy_src, join(exp_path, split(w2v_copy_src)[-1]))
         else:
             print("Error: specified model {} does not exist".format(w2v_copy_src))
     # Учим классификатор
