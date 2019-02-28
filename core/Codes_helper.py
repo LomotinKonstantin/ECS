@@ -8,7 +8,7 @@ class Codes_helper:
         self.set_ipv_change(ipv_change)
         self.clear_math = clear_math
         if clear_math:
-            print('!!! Math')
+            # print('!!! Math')
             self.subj_codes = ['e1', 'e2', 'e3', 'e4', 'e5', 'e7', 'e9',
                                'f1', 'f2', 'f3', 'f4', 'f5', 'f7', 'f8', 'f9']
         else:
