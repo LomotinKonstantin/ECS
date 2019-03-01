@@ -446,8 +446,8 @@ class Worker():
         return name
     
     def create_sets(self,
-                    path_ipv_codes='./RJ_code_21017_utf8.txt',
-                    path_replacement='./Replacement_RJ_code_utf8.txt',
+                    path_ipv_codes='RJ_code_21017_utf8.txt',
+                    path_replacement='Replacement_RJ_code_utf8.txt',
                     split_ratio=None):
         """
         Creates clear train and test X and y based on current train and test sets in object.
@@ -459,8 +459,8 @@ class Worker():
         self.__check_rubr_id()
         helper = Codes_helper(clear_math=not(self.math))
         if self.rubr_id == 'ipv':
-            helper.set_ipv_codes(path_ipv_codes)
-            helper.set_ipv_change(path_replacement)
+            helper.set_ipv_codes(os.path.join(os.path.dirname(__file__), path_ipv_codes))
+            helper.set_ipv_change(os.path.join(os.path.dirname(__file__), path_replacement))
             if self.data_train is not None:
                 self.data_train = helper.change_ipv(self.data_train)
             if self.data_test is not None:
