@@ -5,8 +5,8 @@ from interface.valid_config import ValidConfig
 
 
 class Index:
-    def __init__(self):
-        self.path = os.path.join(os.path.dirname(__file__), "..", "datasets", "index.json")
+    def __init__(self, root_dir: str):
+        self.path = os.path.join(root_dir, "index.json")
         self.data = None
 
     # def load(self) -> None:
@@ -24,7 +24,6 @@ class Index:
     def __form_entry(self, path_to_config: str, section: str) -> dict:
         parser = ValidConfig()
         parser.read(path_to_config)
-        new_entry = {}
         new_entry = parser.get_as_dict(section)
         new_entry["ds_title"] = parser.get("Experiment", "experiment_title")
         return new_entry
@@ -42,27 +41,26 @@ class Index:
         """
         index = {}
         dirs = lambda a: next(os.walk(a))[1]
-        dataset_dir = os.path.dirname(self.path)
-        datasets = dirs(dataset_dir)
-        for dataset_folder in datasets:
-            ds_path = os.path.join(dataset_dir, dataset_folder)
-            clear = []
-            vectors = []
-            for inner_folder in dirs(ds_path):
-                path_to_config = os.path.join(ds_path, inner_folder, "settings.ini")
-                if fullmatch(".+_clear", inner_folder) is not None:
-                    entry = self.__get_ct_entry(path_to_config)
-                    entry["path"] = os.path.join(ds_path, inner_folder)
-                    clear.append(entry)
-                    continue
-                if fullmatch(".+_vectors", inner_folder) is not None:
-                    entry = self.__get_vectors_entry(path_to_config)
-                    entry["path"] = os.path.join(ds_path, inner_folder)
-                    vectors.append(entry)
-            index[dataset_folder] = {
-                "clear": clear,
-                "vectors": vectors
-            }
+        dataset_folder = os.path.dirname(self.path)
+        clear = []
+        vectors = []
+        ds_path = dataset_folder
+        for inner_folder in dirs(ds_path):
+            # Путь к копии файла настроек
+            # с которыми формировались векторы или чистые тексты
+            path_to_config = os.path.join(ds_path, inner_folder, "settings.ini")
+            if fullmatch(".+_clear", inner_folder) is not None:
+                entry = self.__get_ct_entry(path_to_config)
+                entry["path"] = os.path.join(ds_path, inner_folder)
+                clear.append(entry)
+            elif fullmatch(".+_vectors", inner_folder) is not None:
+                entry = self.__get_vectors_entry(path_to_config)
+                entry["path"] = os.path.join(ds_path, inner_folder)
+                vectors.append(entry)
+        index[dataset_folder] = {
+            "clear": clear,
+            "vectors": vectors
+        }
         self.data = index
         # json.dump(self.data, open(self.path, "w"), indent=4)
 
@@ -140,7 +138,7 @@ class Index:
             self.data[dataset][entry_type].append(new_entry)
             return True
 
-    def cleared_texts_list(self, dataset: str) -> list:
+    def cleared_texts_list(self) -> list:
         """
         Получить список всех предобработанных вариантов датасета
 
@@ -150,18 +148,20 @@ class Index:
         """
         if self.data is None:
             raise ValueError("Index file is not loaded!")
+        dataset = os.path.dirname(self.path)
         return self.__get_entries(dataset, "clear")
 
-    def vectors_list(self, dataset: str) -> list:
+    def vectors_list(self) -> list:
         """
         Получить список всех вариантов векторов датасета
 
-        :param dataset: название датасета
+        :param dataset: полный путь к папке датасета
 
         :return: Список словарей с данными о векторах
         """
         if self.data is None:
             raise ValueError("Index file is not loaded!")
+        dataset = os.path.dirname(self.path)
         return self.__get_entries(dataset, "vectors")
 
     def ct_title_exists(self, dataset: str, title: str) -> bool:
