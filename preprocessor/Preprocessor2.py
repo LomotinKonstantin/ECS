@@ -4,9 +4,9 @@ from math import ceil
 from random import choice
 from time import time
 import pandas as pd
-from pymystem3.mystem import Mystem
-from nltk.stem.snowball import SnowballStemmer
-from nltk.stem import WordNetLemmatizer
+from os.path import join, dirname
+from configparser import ConfigParser
+from importlib import import_module
 
 
 def expand_language(lang: str):
@@ -17,35 +17,44 @@ def expand_language(lang: str):
 
 
 class Normalizer:
-    def __init__(self, norm: str, language: str):
-        self.norm = norm
+
+    def __init__(self, preproc: str, language: str):
         self.language = language
+        self.preproc = preproc
+        self.map_config = ConfigParser()
+        self.map_config.read_file(open(join(dirname(__file__), "map.ini"), 'r'))
 
     def normalize(self, text: str, return_list=False):
         res = None
         token_list = None
-        # Лемматизация
-        if self.norm == "lemmatization":
-            # PyMystem3 не поддерживает английский
-            # NLTK.WordNetLemmatizer не поддерживает русский
-            if self.language == "ru":
-                alg = Mystem()
-                token_list = alg.lemmatize(text)
-            elif self.language == "en":
-                alg = WordNetLemmatizer()
-                token_list = list(map(alg.lemmatize, text.split()))
-        # Стемминг
-        elif self.norm == "stemming":
-            alg = SnowballStemmer(expand_language(self.language))
-            token_list = list(map(alg.stem, text.split()))
+        # Подгрузка модели препроцессинга и обработка токенов
+        section = 'Supported' + self.language.capitalize() + 'Models'
+        if not (section in self.map_config.keys()):
+            raise Exception('The preprocessing technique is not supported for this language.')
+        if self.preproc in list(self.map_config[section].keys()):
+            components = self.map_config['Supported' + self.language.capitalize() + 'Models'][self.preproc].split('.')
+            module_name = ".".join(components[:-1])
+            module = import_module(module_name)
+            class_type = getattr(module, components[-1])
+            if self.preproc == 'textblob':
+                alg = class_type(text)
+                token_list = alg.lemmatize()
+            else:
+                alg = class_type()
+                if hasattr(alg, 'stem'):
+                    token_list = alg.stem(text)
+                elif hasattr(alg, 'lemmatize'):
+                    token_list = alg.lemmatize(text)
+                else:
+                    raise Exception('The preprocessing technique is not supported.')
         # Выбор формата результата
         if not return_list:
-            res = " ".join(remove_empty_items(token_list))
+            res = " ".join(self.remove_empty_items(token_list))
         else:
             res = token_list
         return res
 
-    def test():
+    def test(self):
         ru_txt = "Вертише́йки (новолат. Jynx, от лат. iynx < др.-греч. ἴυγξ/ἶυγξ вертишейка" + \
                  "— род мелких птиц семейства дятловых распространённых в Евразии и Африке " + \
                  "Как и другие представители семейства выделяются непропорционально большой головой и длинным языком\n"
