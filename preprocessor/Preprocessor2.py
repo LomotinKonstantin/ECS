@@ -49,7 +49,7 @@ class Normalizer:
                     raise Exception('The preprocessing technique is not supported.')
         # Выбор формата результата
         if not return_list:
-            res = " ".join(self.remove_empty_items(token_list))
+            res = " ".join(remove_empty_items(token_list))
         else:
             res = token_list
         return res
