@@ -291,7 +291,7 @@ if __name__ == '__main__':
             #     exit(1)
             worker.load_w2v(actual_w2v_path)
         # Векторизируем
-        vector_folder = join(data_folder, dataset_title, title + "_vectors")
+        vector_folder = join(dataset_folder, title + "_vectors")
         if not data_loaded:
             if test_file != "":
                 worker.load_data(train_file, test_path=test_file)
