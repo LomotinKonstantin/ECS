@@ -45,18 +45,21 @@ class Index:
         clear = []
         vectors = []
         ds_path = dataset_folder
-        for inner_folder in dirs(ds_path):
-            # Путь к копии файла настроек
-            # с которыми формировались векторы или чистые тексты
-            path_to_config = os.path.join(ds_path, inner_folder, "settings.ini")
-            if fullmatch(".+_clear", inner_folder) is not None:
-                entry = self.__get_ct_entry(path_to_config)
-                entry["path"] = os.path.join(ds_path, inner_folder)
-                clear.append(entry)
-            elif fullmatch(".+_vectors", inner_folder) is not None:
-                entry = self.__get_vectors_entry(path_to_config)
-                entry["path"] = os.path.join(ds_path, inner_folder)
-                vectors.append(entry)
+        try:
+            for inner_folder in dirs(ds_path):
+                # Путь к копии файла настроек
+                # с которыми формировались векторы или чистые тексты
+                path_to_config = os.path.join(ds_path, inner_folder, "settings.ini")
+                if fullmatch(".+_clear", inner_folder) is not None:
+                    entry = self.__get_ct_entry(path_to_config)
+                    entry["path"] = os.path.join(ds_path, inner_folder)
+                    clear.append(entry)
+                elif fullmatch(".+_vectors", inner_folder) is not None:
+                    entry = self.__get_vectors_entry(path_to_config)
+                    entry["path"] = os.path.join(ds_path, inner_folder)
+                    vectors.append(entry)
+        except StopIteration:
+            pass
         index[dataset_folder] = {
             "clear": clear,
             "vectors": vectors
