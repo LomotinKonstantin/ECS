@@ -589,8 +589,7 @@ class Worker():
             if lang:
                 self.lang = lang
             df = pd.concat([self.data_train, self.data_test], ignore_index=True)
-            df.text.to_csv('./only_text.csv', index=False, encoding='utf-8')
-            model = Word2Vec(LineSentence('./only_text.csv'), size=size, window=4, min_count=3, workers=3)
+            model = Word2Vec(df.text, size=size, window=4, min_count=3, workers=3)
             os.remove('./only_text.csv')
             self.w2v_model = model
             name = self.__create_name("w2v_model", model, description=description)
