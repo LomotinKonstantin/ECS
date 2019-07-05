@@ -2,7 +2,8 @@ from configparser import ConfigParser
 import re
 import sys
 from os.path import join, exists, dirname
-from os import linesep, walk
+from os.path import split as os_split
+from os import linesep
 from importlib import import_module
 
 
@@ -35,9 +36,16 @@ class ValidConfig(ConfigParser):
                       'Please specify the training dataset folder name in the "dataset directory"')
         self.__assert("train" not in dataset and "test" not in dataset,
                       "Keywords 'train' and 'test' are reserved and cannot be used")
-        ds_path = join(dirname(__file__), "..", "datasets", dataset)
-        self.__assert(exists(ds_path),
-                      'Dataset "{}" does not exist! Check "datasets" folder'.format(dataset))
+        ds_path = dataset
+        if not exists(ds_path):
+            self.__assert(not ("/" in ds_path or "\\" in ds_path),
+                          f"The dataset '{ds_path}' looks like path, but does not exist")
+            print(f"Searching for '{ds_path}' in default directory")
+            ds_path = join(dirname(__file__), "..", "datasets", os_split(dataset)[-1])
+            self.__assert(exists(ds_path),
+                          "Dataset '{}' does not exist!".format(ds_path))
+            self.set(ds_section, "dataset", ds_path)
+
         tp_option_exists = "test_percent" in self.options(ds_section)
         tf_option_exists = "test_file" in self.options(ds_section)
         self.__assert(tp_option_exists or tf_option_exists,
