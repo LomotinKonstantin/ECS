@@ -140,17 +140,15 @@ if __name__ == '__main__':
         pp_settings = config.get_as_dict("Preprocessing")
         vec_found = None
         clear_found = None
+        common_settings = {**we_settings, **pp_settings}
         for entry in vec_list:
-            if dicts_equal(we_settings, entry, ignore_keys=["path", "ds_title"]):
-                vec_found = entry
+            if dicts_equal(common_settings, entry, ignore_keys=["path", "ds_title"]):
+                actual_data_path = entry["path"]
+                data_type = "vectors"
                 break
-        for entry in clr_list:
-            if dicts_equal(pp_settings, entry, ignore_keys=["path", "ds_title"]):
-                clear_found = entry
-                break
-        if vec_found is not None and clear_found is not None and vec_found == clear_found:
-            actual_data_path = vec_found["path"]
-            data_type = "vectors"
+        # print(f"vec_found = {vec_found}")
+        # print(f"clear_found = {clear_found}")
+
     if actual_data_path == "":
         if len(clr_list) != 0:
             pp_settings = config.get_as_dict("Preprocessing")

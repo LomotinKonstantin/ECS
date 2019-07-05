@@ -55,7 +55,8 @@ class Index:
                     entry["path"] = os.path.join(ds_path, inner_folder)
                     clear.append(entry)
                 elif fullmatch(".+_vectors", inner_folder) is not None:
-                    entry = self.__get_vectors_entry(path_to_config)
+                    entry = {**self.__get_vectors_entry(path_to_config),
+                             **self.__get_ct_entry(path_to_config)}
                     entry["path"] = os.path.join(ds_path, inner_folder)
                     vectors.append(entry)
         except StopIteration:
