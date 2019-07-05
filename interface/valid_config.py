@@ -172,6 +172,9 @@ class ValidConfig(ConfigParser):
         #
         normalization_options = self.smart_parse_list(self.map_config.get("Supported", "normalization"))
         self.__check_value(section, "normalization", normalization_options)
+        norm = self.get(section, "normalization")
+        # if norm == "stemming":
+        #     norm = "snowball"
         #
         lang_options = self.smart_parse_list(self.map_config.get("Supported", "languages"))
         self.__check_value(section, "language", lang_options)
