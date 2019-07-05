@@ -172,9 +172,6 @@ class ValidConfig(ConfigParser):
         #
         normalization_options = self.smart_parse_list(self.map_config.get("Supported", "normalization"))
         self.__check_value(section, "normalization", normalization_options)
-        norm = self.get(section, "normalization")
-        # if norm == "stemming":
-        #     norm = "snowball"
         #
         lang_options = self.smart_parse_list(self.map_config.get("Supported", "languages"))
         self.__check_value(section, "language", lang_options)
@@ -234,8 +231,18 @@ class ValidConfig(ConfigParser):
         self.__assert(section in pp_map_config.keys(),
                       f"Язык {valid_lang} не поддерживается")
         preproc = self.get("Preprocessing", "normalization", fallback="")
+        # Backward compatibility
+        if preproc == "stemming":
+            preproc = "snowball"
+            self.set("Preprocessing", "normalization", preproc)
+        elif preproc == "lemmatization":
+            if valid_lang == "ru":
+                preproc = "pymystem"
+            else:
+                preproc = "wordnet"
+            self.set("Preprocessing", "normalization", preproc)
         options = pp_map_config[section].keys()
-        self.__assert(preproc in options,
+        self.__assert(preproc in options or preproc == "no",
                       f"Method '{preproc}' is not supported for language '{valid_lang}'. "
                       f"Available options: {', '.join(options)}")
 
