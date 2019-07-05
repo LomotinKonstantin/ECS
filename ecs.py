@@ -107,7 +107,7 @@ if __name__ == '__main__':
     config.read(settings_path, encoding="cp1251")
     print("Validating experiment settings...")
     config.validate_all()
-    print("=" * 20, "Validation OK", "=" * 20)
+
     # Создаем рабочего
     worker = Worker()
     worker.set_math(True)
@@ -117,6 +117,7 @@ if __name__ == '__main__':
     # index.load()
     index.build()
     vec_list = index.vectors_list()
+    clr_list = index.cleared_texts_list()
     actual_data_path = ""
     data_type = "raw"
     we_settings = config.get_as_dict("WordEmbedding")
@@ -131,16 +132,26 @@ if __name__ == '__main__':
         file = next(walk(dataset_folder))[2][0]
         language = recognize_language(join(dataset_folder, file),
                                       encoding="cp1251", n_lines=10)
+    config.validate_normalization(language)
+    print("=" * 20, "Validation OK", "=" * 20)
     print("Language:", language)
     if len(vec_list) != 0 and not w2v_exists:
         we_settings = config.get_as_dict("WordEmbedding")
+        pp_settings = config.get_as_dict("Preprocessing")
+        vec_found = None
+        clear_found = None
         for entry in vec_list:
             if dicts_equal(we_settings, entry, ignore_keys=["path", "ds_title"]):
-                actual_data_path = entry["path"]
-                data_type = "vectors"
+                vec_found = entry
                 break
+        for entry in clr_list:
+            if dicts_equal(pp_settings, entry, ignore_keys=["path", "ds_title"]):
+                clear_found = entry
+                break
+        if vec_found is not None and clear_found is not None and vec_found == clear_found:
+            actual_data_path = vec_found["path"]
+            data_type = "vectors"
     if actual_data_path == "":
-        clr_list = index.cleared_texts_list()
         if len(clr_list) != 0:
             pp_settings = config.get_as_dict("Preprocessing")
             for entry in clr_list:

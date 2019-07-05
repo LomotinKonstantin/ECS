@@ -224,6 +224,18 @@ class ValidConfig(ConfigParser):
             self.__check_value(section, "pooling", pooling_options)
             print("W2V model is not specified, new model will be created")
 
+    def validate_normalization(self, valid_lang: str) -> None:
+        pp_map_config = ConfigParser()
+        pp_map_config.read_file(open(join(dirname(__file__), "..", "preprocessor", "map.ini"), 'r'))
+        section = f"Supported{valid_lang.capitalize()}Models"
+        self.__assert(section in pp_map_config.keys(),
+                      f"Язык {valid_lang} не поддерживается")
+        preproc = self.get("Preprocessing", "normalization", fallback="")
+        options = pp_map_config[section].keys()
+        self.__assert(preproc in options,
+                      f"Method '{preproc}' is not supported for language '{valid_lang}'. "
+                      f"Available options: {', '.join(options)}")
+
     def validate_all(self):
         self.validate_dataset()
         print("Dataset settings are valid")

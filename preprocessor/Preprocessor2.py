@@ -30,7 +30,7 @@ class Normalizer:
         # Подгрузка модели препроцессинга и обработка токенов
         section = 'Supported' + self.language.capitalize() + 'Models'
         if not (section in self.map_config.keys()):
-            raise Exception('The preprocessing technique is not supported for this language.')
+            raise ValueError('Preprocessing techniques are not supported for this language.')
         if self.preproc in list(self.map_config[section].keys()):
             components = self.map_config['Supported' + self.language.capitalize() + 'Models'][self.preproc].split('.')
             module_name = ".".join(components[:-1])
@@ -46,7 +46,9 @@ class Normalizer:
                 elif hasattr(alg, 'lemmatize'):
                     token_list = alg.lemmatize(text)
                 else:
-                    raise Exception('The preprocessing technique is not supported.')
+                    raise ValueError(f"Algorithm {alg} has unknown API")
+        else:
+            raise ValueError(f'The preprocessing technique is not supported for this language')
         # Выбор формата результата
         if not return_list:
             res = " ".join(remove_empty_items(token_list))
