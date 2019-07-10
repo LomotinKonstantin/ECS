@@ -207,7 +207,7 @@ class ValidConfig(ConfigParser):
             #
             pooling_options = self.smart_parse_list(self.map_config.get("Supported", "pooling"))
             self.__check_value(section, "pooling", pooling_options)
-            print("W2V model {} not found, new model will be created".format(use_model))
+            print("Using specified Word2Vec model: {}".format(use_model))
         else:
             options = {"vector_dim", "pooling"}
             for key in options:
