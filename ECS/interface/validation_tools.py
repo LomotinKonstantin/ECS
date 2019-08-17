@@ -1,12 +1,11 @@
 from importlib import import_module
-import re
 import sys
 
 
-LIST_RE = r"\[.*?\]"
+# Функции для парсинга типов данных настроек
+# (См. докстринг ValidConfig)
 
-
-def is_int(value: str):
+def is_int(value: str) -> bool:
     try:
         int(value)
         return True
@@ -14,7 +13,7 @@ def is_int(value: str):
         return False
 
 
-def is_float(value: str):
+def is_float(value: str) -> bool:
     try:
         float(value)
         return True
@@ -22,16 +21,59 @@ def is_float(value: str):
         return False
 
 
-def is_bool(value: str):
-    if value.lower() in ["true", "false"]:
-        return True
-    return False
+def is_bool(value: str) -> bool:
+    return value.lower() in ["true", "false"]
 
 
-def str_to_bool(value: str):
-    if value.lower() == "false":
+def is_plain_sequence(value: str) -> bool:
+    if value.strip() == "" or "[" in value or "]" in value:
         return False
-    return True
+    # Есть хотя бы 1 непустое значение
+    return any(list(map(lambda x: len(x.strip()) > 0, value.split(","))))
+
+
+def is_nested_int_list(value: str) -> bool:
+    op_br = value.count("[")
+    cl_br = value.count("]")
+    if (op_br * cl_br == 0) or (op_br != cl_br):
+        return False
+    return all(map(is_int, value.replace("[", "").replace("]", "").split(",")))
+
+
+def parse_primitive(value: str):
+    stripped = value.strip()
+    if is_int(stripped):
+        return int(stripped)
+    elif is_float(stripped):
+        return float(stripped)
+    elif is_bool(stripped):
+        return str_to_bool(stripped)
+    return stripped
+
+
+def parse_plain_sequence(value: str) -> list:
+    if not is_plain_sequence(value):
+        raise ValueError(f"'{value}' does not represent valid plain value sequence")
+    parsed = []
+    for item in value.split(","):
+        item = item.strip()
+        if len(item) == 0:
+            continue
+        parsed.append(parse_primitive(item))
+    return parsed
+
+
+def parse_nested_int_list(value: str) -> list:
+    if not is_nested_int_list(value):
+        raise ValueError(f"'{value}' does not represent valid nested lists of integers")
+    # TODO: небезопасно!
+    return eval(f"[{value}]")
+
+
+def str_to_bool(value: str) -> bool:
+    if not is_bool(value):
+        raise ValueError(f"'{value}' does not represent boolean value")
+    return value.lower() == "true"
 
 
 def load_class(classpath: str):
@@ -43,42 +85,8 @@ def load_class(classpath: str):
     return class_type
 
 
-def val_assert(condition: bool, error_msg: str, leave=True):
+def val_assert(condition: bool, error_msg: str, leave=True) -> None:
     if not condition:
         print(error_msg)
         if leave:
             sys.exit(0)
-
-
-def smart_parse_value(str_list: str):
-    """
-    Парсит числовые и булевские значения,
-    а также списки любой вложенности с любым содержимым.
-    Принимаются списки в формате ini, то есть значения через запятую, без скобок.
-    Вложенные списки должны быть заключены в [].
-    :param str_list: строка со значением
-    :return: распарсенное значение
-    """
-    if "," not in str_list:
-        if is_int(str_list):
-            return [int(str_list)]
-        elif is_float(str_list):
-            return [float(str_list)]
-        elif is_bool(str_list):
-            return [str_to_bool(str_list)]
-        return [str_list]
-    parsed = []
-    sublists = re.findall(LIST_RE, str_list)
-    if len(sublists) == 0:
-        items = list(map(str.strip, str_list.split(",")))
-        for i in items:
-            if is_int(i):
-                parsed.append(int(i))
-            elif is_float(i):
-                parsed.append(float(i))
-            else:
-                parsed.append(i)
-    else:
-        for sl in sublists:
-            parsed.append(smart_parse_value(sl[1:-1]))
-    return parsed

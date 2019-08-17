@@ -7,6 +7,18 @@ from ECS.interface.validation_tools import *
 
 
 class ValidConfig(ConfigParser):
+    """
+    Конфиг, который содержит настройки ECS.
+    Возможные типы данных в ini:
+        1. Числа - целые и дробные
+        2. Строки - без кавычек
+        3. Булевские значения - регистронезависимые True и False
+        3. Плоские списки со смешанными значениями
+            Пример: 1, a string, 0.01, true, -0
+            В таких списках не ожидается символов [].
+        4. Вложенные списки целых чисел (структура нейросети)
+            Пример: [3], [1, 2, 3], [15, 15]
+    """
     LIST_DELIM = ","
     map_config = ConfigParser()
 
@@ -17,10 +29,10 @@ class ValidConfig(ConfigParser):
 
     def get_as_list(self, section, key):
         value = self.get(section, key)
-        return smart_parse_value(value)
+        return parse_plain_sequence(value)
 
     def set(self, section, option, value=None):
-        if type(value) is list:
+        if isinstance(value, list):
             str_value = (self.LIST_DELIM + " ").join(value)
         else:
             str_value = str(value)
@@ -163,10 +175,10 @@ class ValidConfig(ConfigParser):
         #
         self.__check_value(section, "remove_stopwords", [True, False])
         #
-        normalization_options = smart_parse_value(self.map_config.get("Supported", "normalization"))
+        normalization_options = parse_plain_sequence(self.map_config.get("Supported", "normalization"))
         self.__check_value(section, "normalization", normalization_options)
         #
-        lang_options = smart_parse_value(self.map_config.get("Supported", "languages"))
+        lang_options = parse_plain_sequence(self.map_config.get("Supported", "languages"))
         self.__check_value(section, "language", lang_options)
         #
         val_assert(is_int(batch_size) and int(batch_size) > 0,
@@ -191,7 +203,7 @@ class ValidConfig(ConfigParser):
                        "Invalid value of 'vector_dim:'\n"
                        "Only positive integers are supported")
             #
-            pooling_options = smart_parse_value(self.map_config.get("Supported", "pooling"))
+            pooling_options = parse_plain_sequence(self.map_config.get("Supported", "pooling"))
             self.__check_value(section, "pooling", pooling_options)
             print("Using specified Word2Vec model: {}".format(use_model))
         else:
@@ -206,7 +218,7 @@ class ValidConfig(ConfigParser):
                        "Invalid value of 'vector_dim:'\n"
                        "Only positive integers are supported")
             #
-            pooling_options = smart_parse_value(self.map_config.get("Supported", "pooling"))
+            pooling_options = parse_plain_sequence(self.map_config.get("Supported", "pooling"))
             self.__check_value(section, "pooling", pooling_options)
             print("W2V model is not specified, new model will be created")
 
@@ -287,7 +299,7 @@ class ValidConfig(ConfigParser):
         res = {}
         for i in self.options(section):
             str_val = self.get(section, i)
-            res[i] = smart_parse_value(str_val)
+            res[i] = parse_plain_sequence(str_val)
             if len(res[i]) == 1:
                 res[i] = res[i][0]
         return res
@@ -295,7 +307,7 @@ class ValidConfig(ConfigParser):
 
 if __name__ == '__main__':
     config = ValidConfig()
-    config.read(join(dirname(__file__), "..", "settings.ini"), encoding="cp1251")
+    config.read(join(dirname(__file__), "../../test/test_settings", "settings.ini"), encoding="cp1251")
     config.validate_dataset()
     config.validate_experiment()
     config.validate_preprocessing()
