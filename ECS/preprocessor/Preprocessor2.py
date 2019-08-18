@@ -14,6 +14,7 @@ def expand_language(lang: str):
         return "russian"
     if lang == "en":
         return "english"
+    return lang
 
 
 class Normalizer:
@@ -23,59 +24,51 @@ class Normalizer:
         self.preproc = preproc
         self.map_config = ConfigParser()
         self.map_config.read_file(open(join(dirname(__file__), "map.ini"), 'r'))
+        section = f"Supported{self.language.capitalize()}Models"
+        if section not in self.map_config.keys():
+            raise ValueError('Preprocessing is not supported for this language')
+        if self.preproc not in list(self.map_config[section].keys()):
+            raise ValueError(f'The preprocessing technique is not supported for this language')
+        components = self.map_config['Supported' + self.language.capitalize() + 'Models'][self.preproc].split('.')
+        module_name = ".".join(components[:-1])
+        try:
+            module = import_module(module_name)
+            self.class_type = getattr(module, components[-1])
+        except ImportError:
+            print(f"Package '{module_name}' is not installed!")
+            exit(0)
 
     def normalize(self, text: str, return_list=False):
-        res = None
-        token_list = None
-        # Подгрузка модели препроцессинга и обработка токенов
-        section = 'Supported' + self.language.capitalize() + 'Models'
-        if not (section in self.map_config.keys()):
-            raise ValueError('Preprocessing techniques are not supported for this language.')
-        if self.preproc in list(self.map_config[section].keys()):
-            components = self.map_config['Supported' + self.language.capitalize() + 'Models'][self.preproc].split('.')
-            module_name = ".".join(components[:-1])
-            module = import_module(module_name)
-            class_type = getattr(module, components[-1])
-            if self.preproc == 'textblob':
-                alg = class_type(text)
-                token_list = alg.lemmatize()
+        if self.preproc == 'textblob':
+            alg = self.class_type(text)
+            token_list = alg.lemmatize()
+        else:
+            alg = self.class_type()
+            if hasattr(alg, 'stem'):
+                token_list = alg.stem(text)
+            elif hasattr(alg, 'lemmatize'):
+                token_list = alg.lemmatize(text)
             else:
-                alg = class_type()
-                if hasattr(alg, 'stem'):
-                    token_list = alg.stem(text)
-                elif hasattr(alg, 'lemmatize'):
-                    token_list = alg.lemmatize(text)
-                else:
-                    raise ValueError(f"Algorithm {alg} has unknown API")
-        else:
-            raise ValueError(f'The preprocessing technique is not supported for this language')
+                raise ValueError(f"Algorithm {alg} has unknown API")
         # Выбор формата результата
-        if not return_list:
-            res = " ".join(remove_empty_items(token_list))
+        # print(self.preproc, self.language, token_list)
+        if return_list:
+            if isinstance(token_list, str):
+                result = token_list.split()
+            else:
+                result = token_list
         else:
-            res = token_list
-        return res
-
-    def test(self):
-        ru_txt = "Вертише́йки (новолат. Jynx, от лат. iynx < др.-греч. ἴυγξ/ἶυγξ вертишейка" + \
-                 "— род мелких птиц семейства дятловых распространённых в Евразии и Африке " + \
-                 "Как и другие представители семейства выделяются непропорционально большой головой и длинным языком\n"
-
-        en_txt = "The wrynecks (genus Jynx) are a small but distinctive group of small Old World woodpeckers " + \
-                 "Jynx is from the Ancient Greek iunx, the Eurasian wryneck\n"
-        pattern = "\n\n {}\n\n{}\n\n"
-        print("Оригинал:" + pattern.format(ru_txt, en_txt))
-        ru_stem = Normalizer("stemming", "ru").normalize(ru_txt)
-        en_stem = Normalizer("stemming", "en").normalize(en_txt)
-        print("Стемминг Snowball:" + pattern.format(ru_stem, en_stem))
-        ru_lemm = Normalizer("lemmatization", "ru").normalize(ru_txt)
-        en_lemm = Normalizer("lemmatization", "en").normalize(en_txt)
-        print("Лемматизация:" + pattern.format(ru_lemm, en_lemm))
+            if isinstance(token_list, list):
+                result = " ".join(remove_empty_items(token_list))
+            else:
+                result = token_list
+        return result
 
 
 class TimeTracer:
     def __init__(self):
         self.started = False
+        self.time = None
 
     def start(self):
         self.time = time()
@@ -90,12 +83,12 @@ class TimeTracer:
         return res
 
 
-def remove_empty_items(lst):
-    return list(filter(lambda x: not bool(re.fullmatch("\s*", x)), lst))
+def remove_empty_items(lst: list):
+    return list(filter(lambda x: len(x.strip()) > 0, lst))
 
 
 class Preprocessor:
-    '''
+    """
     Класс для выполнения предобработки однотипных данных.
     Может брать данные из трех уровней источников:
         - Из набора файлов: метод preprocess_files(filenames: list, columns: dict, kw_delim: str)
@@ -105,7 +98,7 @@ class Preprocessor:
 
     —
     _
-    '''
+    """
     delim = " ☺☻ "
     sw_files = {"ru": "ru_stopwords.txt",
                 "en": "en_stopwords.txt"}
@@ -114,7 +107,7 @@ class Preprocessor:
 
     DEBUG = True
 
-    def __init__(self, groups_to_save=["буквы рус.", "пробел", "дефис", "буквы лат."]):
+    def __init__(self, groups_to_save=("буквы рус.", "пробел", "дефис", "буквы лат.")):
         """
         Препроцессор для обработки обучающих данных из ВИНИТИ.
         ---------------------------------------------------
@@ -132,7 +125,8 @@ class Preprocessor:
                 "индексы"          - обозначения верхних и нижних индексов
                 "команды"          - перевод, начало и конец строки, жирный шрифт, курсив, цвет
                 "пробел            - в этой группе только пробел " "
-                "служебные"        - признак текста с посторонней разметкой и нераспознанного символа, приоритеты при сортировке
+                "служебные"        - признак текста с посторонней разметкой и нераспознанного символа,
+                                     приоритеты при сортировке
                 "спец. зн. доп."   - тильда, валюта, градус, планеты, обратный слэш
                 "стрелки"          - разные стрелки ascii
                 "точка"            - в этой группе только точка "."
@@ -183,21 +177,15 @@ class Preprocessor:
                 raise ValueError("Не удалось определить язык")
         return res_lang
 
-    def __dense(self, text: str) -> str:
+    @staticmethod
+    def __dense(text: str) -> str:
         return re.sub("\\s{2,}", " ", text)
 
     def __remove_stopwords(self, text: str, lang: str, sub=" ") -> str:
-        return " ".join(filter(lambda x: x not in self.stopwords[lang], text.split()))
+        return sub.join(filter(lambda x: x not in self.stopwords[lang], text.split()))
 
-    def __remove_double_formulas(self, text: str, sub=" ") -> str:
-        # IT DOESN'T WORK
-        # PLEASE
-        # NEVER USE THIS REGEXP
-        # I BEG YOU
-        # FIX IT
-        return re.sub("\\${2}.+?\\${2}", sub, text)
-
-    def __remove_single_formulas(self, text: str, sub=" ") -> str:
+    @staticmethod
+    def __remove_single_formulas(text: str, sub=" ") -> str:
         # return re.sub("(?<=[^$])\\$(?=[^$]).+?(?<=[^$])\\$(?=[^$])", sub, text)
         return re.sub("_[ёЁ](var)?", sub, text)
 
@@ -206,8 +194,8 @@ class Preprocessor:
 
     def __remove_md(self, text: str) -> str:
         res = text
-        for i in self.viniti_md:
-            res = res.replace(i, " ")
+        for md_element in self.viniti_md:
+            res = res.replace(md_element, " ")
         return res
 
     def __beautify(self, text: str) -> str:
@@ -262,7 +250,7 @@ class Preprocessor:
         if language == "auto":
             lang = self.recognize_language(text.lower(), default_lang)
         if lang is None:
-            return None
+            raise ValueError("Unable to recognize language!")
         # res = text
         self.last_language = lang
         res = text
@@ -308,18 +296,11 @@ class Preprocessor:
                              kw_delim: str,
                              language="auto",
                              default_lang="error",
-                             columns={"id": "id_publ",
-                                      "title": "title",
-                                      "text": "ref_txt",
-                                      "keywords": "kw_list",
-                                      "subj": "SUBJ",
-                                      "ipv": "IPV",
-                                      "rgnti": "RGNTI",
-                                      "correct": "eor"},
+                             columns=None,
                              title_weight=1,
                              body_weight=1,
                              kw_weight=1,
-                             batch_size=50000) -> pd.DataFrame:
+                             batch_size: int = 50000) -> pd.DataFrame:
         """
         Предобработка датафрейма
         -------------------------
@@ -378,6 +359,15 @@ class Preprocessor:
                         ipv - коды РЖ
                         rgnti - коды ГРНТИ
         """
+        if columns is None:
+            columns = {"id": "id_publ",
+                       "title": "title",
+                       "text": "ref_txt",
+                       "keywords": "kw_list",
+                       "subj": "SUBJ",
+                       "ipv": "IPV",
+                       "rgnti": "RGNTI",
+                       "correct": "eor"}
         self.__trace_time("Init")
         for key, value in columns.items():
             if value is None:
@@ -385,7 +375,10 @@ class Preprocessor:
                     raise ValueError("Колонки не могут быть None! См. докстринг.")
             if value not in df.columns:
                 if value != "correct":
-                    raise ValueError("Колонка {} не найдена в датафрейме. См. аргумент columns".format(value))
+                    raise ValueError(f"Колонка {value} не найдена в датафрейме. "
+                                     f"См. аргумент columns")
+        if batch_size <= 0:
+            raise ValueError(f"Batch size must be positive integer! Found {batch_size}")
         self.__trace_time("Columns checking")
         # Подготовка датафрейма, объединение частей документа
         un_df = df.drop([columns["title"], columns["keywords"]], axis=1)
@@ -397,7 +390,6 @@ class Preprocessor:
         batches = ceil(len(un_df.index) / batch_size)
         print("Starting merging document part columns")
         current_batch = 0
-        #        weighted_bodies = []
         for n, i in enumerate(df.index):
             new_batch = ceil(n / batch_size)
             if new_batch > current_batch:
@@ -409,9 +401,6 @@ class Preprocessor:
             if kw == "nan":
                 kw = ""
             un_df.loc[i, "text"] = "{} {} {}".format(title * title_weight, body * body_weight, kw * kw_weight)
-        # weighted_bodies.append("{} {} {}".format(title * title_weight, body * body_weight, kw * kw_weight))
-        #        un_df.loc.text = weighted_bodies
-
         self.__trace_time("Merging document part columns")
         # Предобработка
         print("Starting preprocessing")
@@ -454,8 +443,8 @@ class Preprocessor:
         print("Source index len: {}\nResult len: {}".format(len(un_df.index), len(result)))
         if len(un_df.index) != len(result):
             # print(list(filter(lambda x: self.delim in x, result)))
-            raise IndexError("Regexp has devoured smth again :(")
-        un_df.text = list(map(lambda x: x.strip(), result))
+            raise IndexError("Regexp has devoured sth again :(")
+        un_df.text = pd.Series(list(map(lambda x: x.strip(), result)))
         self.__trace_time("Stripping")
         print("Successfully processed", len(result), "texts of ", len(df.index))
         return un_df
@@ -467,18 +456,20 @@ class Preprocessor:
                         kw_delim: str,
                         language="auto",
                         default_lang="error",
-                        columns={"id": "id_publ",
-                                 "title": "title",
-                                 "text": "ref_txt",
-                                 "keywords": "kw_list",
-                                 "subj": "SUBJ",
-                                 "ipv": "IPV",
-                                 "rgnti": "RGNTI",
-                                 "correct": "eor"},
+                        columns=None,
                         title_weight=1,
                         body_weight=1,
                         kw_weight=1,
                         batch_size=50000):
+        if columns is None:
+            columns = {"id": "id_publ",
+                       "title": "title",
+                       "text": "ref_txt",
+                       "keywords": "kw_list",
+                       "subj": "SUBJ",
+                       "ipv": "IPV",
+                       "rgnti": "RGNTI",
+                       "correct": "eor"}
         df = pd.read_csv(fn_in, encoding="cp1251", quoting=3, sep="\t")
         res = self.preprocess_dataframe(df=df,
                                         remove_stopwords=remove_stopwords,
@@ -506,18 +497,18 @@ class Preprocessor:
     def __load_sw(self) -> dict:
         res = {}
         for lang, fn in self.sw_files.items():
-            file = open(os.path.join(os.path.dirname(__file__), fn), encoding="utf8")
-            sw = file.read().split()
+            sw_file = open(os.path.join(os.path.dirname(__file__), fn), encoding="utf8")
+            sw = sw_file.read().split()
             res[lang] = tuple(remove_empty_items(sw))
         return res
 
-    def __trace_time(self, descr: str):
+    def __trace_time(self, description: str):
         if self.DEBUG:
-            if descr.lower() == "init":
+            if description.lower() == "init":
                 self.timer.start()
                 print("Time recording is started")
             else:
-                print(descr, "has taken {} sec".format(self.timer.check()))
+                print(description, "has taken {} sec".format(self.timer.check()))
 
 
 if __name__ == "__main__":
@@ -532,25 +523,25 @@ if __name__ == "__main__":
         os.mkdir(out_folder)
     t = time()
     a = Preprocessor()
-    columns = {"id": "id_bo",
-               "title": "title",
-               "text": "ref_txt",
-               "keywords": "kw_list",
-               "subj": "SUBJ",
-               "ipv": "IPV",
-               "rgnti": "RGNTI",
-               "correct": "eor"}
-    for i in files:
-        print(i)
-        df = pd.read_csv(os.path.join(in_folder, i), encoding="cp1251", quoting=3, sep="\t")
-        res = a.preprocess_dataframe(df=df,
-                                     remove_stopwords=True,
-                                     remove_formulas=True,
-                                     normalization="no",
-                                     kw_delim=";",
-                                     language="auto",
-                                     columns=columns,
-                                     default_lang="none",
-                                     batch_size=40000)
-        res.to_csv(os.path.join(out_folder, (i[:-4] + "_clear.txt")), encoding="utf8", sep="\t", index=False)
+    columns_dict = {"id": "id_bo",
+                    "title": "title",
+                    "text": "ref_txt",
+                    "keywords": "kw_list",
+                    "subj": "SUBJ",
+                    "ipv": "IPV",
+                    "rgnti": "RGNTI",
+                    "correct": "eor"}
+    for file in files:
+        print(file)
+        test_df = pd.read_csv(os.path.join(in_folder, file), encoding="cp1251", quoting=3, sep="\t")
+        pp_df = a.preprocess_dataframe(df=test_df,
+                                       remove_stopwords=True,
+                                       remove_formulas=True,
+                                       normalization="no",
+                                       kw_delim=";",
+                                       language="auto",
+                                       columns=columns_dict,
+                                       default_lang="none",
+                                       batch_size=40000)
+        pp_df.to_csv(os.path.join(out_folder, (file[:-4] + "_clear.txt")), encoding="utf8", sep="\t", index=False)
     print(time() - t, "sec")
