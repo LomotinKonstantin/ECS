@@ -14,7 +14,7 @@ class CodesHelper:
             self.subj_codes = ['e1', 'e2', 'e3', 'e4', 'e5', 'e7', 'e8', 'e9',
                                'f1', 'f2', 'f3', 'f4', 'f5', 'f7', 'f8', 'f9']
     
-    def clear_null(self, data, column_name):
+    def clear_null(self, data: pd.DataFrame, column_name: str):
         data.index.name = 'index'
         data = data.reset_index()
         data = data.drop(data[data[column_name].isnull()].index)
@@ -122,7 +122,7 @@ class CodesHelper:
 
     def cut_rgnti(self, data):
         """
-        Transforms rgnti cide into xx.xx format.
+        Transforms rgnti code into xx.xx format.
 
         Args:
         data        -- list/pd.Series with rgnti column.
