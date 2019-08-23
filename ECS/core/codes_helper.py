@@ -13,8 +13,9 @@ class CodesHelper:
         else:
             self.subj_codes = ['e1', 'e2', 'e3', 'e4', 'e5', 'e7', 'e8', 'e9',
                                'f1', 'f2', 'f3', 'f4', 'f5', 'f7', 'f8', 'f9']
-    
-    def clear_null(self, data: pd.DataFrame, column_name: str):
+
+    @staticmethod
+    def clear_null(data: pd.DataFrame, column_name: str):
         data.index.name = 'index'
         data = data.reset_index()
         data = data.drop(data[data[column_name].isnull()].index)

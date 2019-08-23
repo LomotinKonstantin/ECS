@@ -281,7 +281,7 @@ class Preprocessor:
             print("Normalization...")
             res = Normalizer(normalization, lang).normalize(res)
             res = re.sub(" ".join(self.delim).strip(), self.delim, res)
-            print(self.delim in res, type(res))
+            # print(self.delim in res, type(res))
             # with open("log.txt", "w", encoding="utf-8") as f:
             #     f.write(res)
         # print("Removing widow '-'...")
@@ -444,7 +444,7 @@ class Preprocessor:
         if len(un_df.index) != len(result):
             # print(list(filter(lambda x: self.delim in x, result)))
             raise IndexError("Regexp has devoured sth again :(")
-        un_df.text = pd.Series(list(map(lambda x: x.strip(), result)))
+        un_df.text = list(map(lambda x: x.strip(), result))
         self.__trace_time("Stripping")
         print("Successfully processed", len(result), "texts of ", len(df.index))
         return un_df
@@ -506,7 +506,7 @@ class Preprocessor:
         if self.DEBUG:
             if description.lower() == "init":
                 self.timer.start()
-                print("Time recording is started")
+                print("Time recording started")
             else:
                 print(description, "has taken {} sec".format(self.timer.check()))
 

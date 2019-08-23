@@ -1,53 +1,11 @@
 import warnings
-
 warnings.filterwarnings("ignore")
-
-from interface.valid_config import ValidConfig
-from interface.index import Index
-from preprocessor.Preprocessor2 import Preprocessor
-from os.path import dirname, join, exists, split
-from os import walk, mkdir, listdir
-from core.Worker import Worker
-from datetime import datetime
-from shutil import copyfile
 from argparse import ArgumentParser
+import os
 
-'''
-Воркфлоу следующий:
-1. Обработать конфиг:
-    * Загрузить
-    * Провалидировать
-2. Загрузить индекс
-    Индекс имеет следующую структуру:
-    Каждая запись дополнительно включает поле path - путь к папке с текстами/векторами
-    {
-        <dataset_name1>: {
-            clear: [
-                {<preprocessing_section_of_copied_settings1>},
-                {<preprocessing_section_of_copied_settings2>},
-                {<preprocessing_section_of_copied_settings3>}
-            ],
-            vectors: [
-                {<word_embedding_section_of_copied_settings1>},
-                {<word_embedding_section_of_copied_settings3>},
-            ]
-        },
-        
-        <dataset_name2>: {
-            clear: [
-                {<preprocessing_section_of_copied_settings4>}
-            ],
-            vectors: []
-        },
-        
-        <dataset_name3>: {
-            clear: [],
-            vectors: []
-        }
-    }
-3. Согласно общей схеме получить актуальный датасет
-4. Запустить Worker
-'''
+from ECS.interface.valid_config import ValidConfig
+from ECS.interface.index import Index
+from ECS.preprocessor.Preprocessor2 import Preprocessor
 
 
 def dicts_equal(d1: dict, d2: dict, ignore_keys=()) -> bool:
@@ -98,8 +56,8 @@ if __name__ == '__main__':
     add_args(argparser)
     args = argparser.parse_args()
     exp_path = args.exp_path
-    settings_path = join(exp_path, "settings.ini")
-    if not exists(settings_path):
+    settings_path = os.path.join(exp_path, "settings.ini")
+    if not os.path.exists(settings_path):
         print("No settings.ini file found in ", exp_path)
         exit(0)
     # Загружаем и проверяем конфиг
