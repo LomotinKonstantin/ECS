@@ -254,31 +254,31 @@ class Preprocessor:
         # res = text
         self.last_language = lang
         res = text
-        print("Removing emails...")
+        # print("Removing emails...")
         res = self.__remove_email(res)
         # print(self.delim in res, type(res))
         # print("Removing $$...$$")
         # res = self.__remove_double_formulas(res)
         if remove_formulas:
-            print("Removing $...$")
+            # print("Removing $...$")
             res = self.__remove_single_formulas(res)
-        print("Removing markdown")
+        # print("Removing markdown")
         res = self.__remove_md(res)
         # print(self.delim in res, type(res))
         if remove_stopwords:
-            print("Dense...")
+            # print("Dense...")
             res = self.__dense(res)
             # print(self.delim in res, type(res))
-            print("Removing stopwords")
+            # print("Removing stopwords")
             res = self.__remove_stopwords(res.lower(), lang)
             # print(self.delim in res, type(res))
-        print("Some beauty...")
+        # print("Some beauty...")
         res = self.__beautify(res)
         # with open("log.txt", "w", encoding="utf8") as f:
         #     f.write(res)
         # print(self.delim in res, type(res))
         if normalization != "no":
-            print("Normalization...")
+            # print("Normalization...")
             res = Normalizer(normalization, lang).normalize(res)
             res = re.sub(" ".join(self.delim).strip(), self.delim, res)
             # print(self.delim in res, type(res))
@@ -286,7 +286,7 @@ class Preprocessor:
             #     f.write(res)
         # print("Removing widow '-'...")
         # res = re.sub("\\s-\\s", "-", res)
-        print("And finally done!")
+        # print("And finally done!")
         return res
 
     def preprocess_dataframe(self, df: pd.DataFrame,
@@ -388,12 +388,12 @@ class Preprocessor:
         self.__trace_time("Copying DF")
         #
         batches = ceil(len(un_df.index) / batch_size)
-        print("Starting merging document part columns")
+        # print("Starting merging document part columns")
         current_batch = 0
         for n, i in enumerate(df.index):
             new_batch = ceil(n / batch_size)
             if new_batch > current_batch:
-                print("Merging part {}/{}".format(new_batch, batches))
+                # print("Merging part {}/{}".format(new_batch, batches))
                 current_batch = new_batch
             title = str(df.loc[i, columns["title"]])
             body = str(df.loc[i, columns["text"]])
@@ -403,7 +403,7 @@ class Preprocessor:
             un_df.loc[i, "text"] = "{} {} {}".format(title * title_weight, body * body_weight, kw * kw_weight)
         self.__trace_time("Merging document part columns")
         # Предобработка
-        print("Starting preprocessing")
+        # print("Starting preprocessing")
         result = []
         if len(un_df.index) > batch_size:
             for i in range(batches - 1):
@@ -440,7 +440,7 @@ class Preprocessor:
             if new_part is not None:
                 result = new_part.split(self.delim)
             self.__trace_time("Full-DF preprocessing")
-        print("Source index len: {}\nResult len: {}".format(len(un_df.index), len(result)))
+        # print("Source index len: {}\nResult len: {}".format(len(un_df.index), len(result)))
         if len(un_df.index) != len(result):
             # print(list(filter(lambda x: self.delim in x, result)))
             raise IndexError("Regexp has devoured sth again :(")
@@ -506,7 +506,7 @@ class Preprocessor:
         if self.DEBUG:
             if description.lower() == "init":
                 self.timer.start()
-                print("Time recording started")
+                # print("Time recording started")
             else:
                 print(description, "has taken {} sec".format(self.timer.check()))
 
