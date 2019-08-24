@@ -8,62 +8,61 @@ from gensim.models import Word2Vec
 from ECS.preprocessor.Preprocessor2 import Preprocessor
 
 
-def pp_generator(raw_files: list, chunk_size: int, **pp_settings) -> pd.DataFrame:
+def pp_from_raw_generator(raw_file: str, chunk_size: int, **pp_settings) -> pd.DataFrame:
     """
     Генератор предобработанных текстов
-    :param raw_files: список исходных csv-файлов
+    :param raw_file: путь к файлу исходных текстов
     :param chunk_size: размер чанка для предобработки
     :param pp_settings: настройки препроцессора
     """
     pp = Preprocessor()
-    for raw_file in raw_files:
-        for chunk in pd.read_csv(raw_file, encoding="cp1251", quoting=3, sep="\t", chunksize=chunk_size):
-            pp_chunk = pp.preprocess_dataframe(df=chunk, **pp_settings)
-            yield pp_chunk
+    for chunk in pd.read_csv(raw_file, encoding="cp1251", quoting=3, sep="\t", chunksize=chunk_size):
+        pp_chunk = pp.preprocess_dataframe(df=chunk, **pp_settings)
+        yield pp_chunk
 
 
-def caching_pp_generator(raw_files: str,
+def caching_pp_generator(raw_file: str,
+                         cache_path: str,
                          chunk_size: int,
-                         cache_folder: str,
                          **pp_settings) -> pd.DataFrame:
     """
     Кэширующий генератор предобработанных данных.
     Обеспечивает транзакционность кэширования.
+    :param raw_file: путь к файлу исходных текстов
+    :param cache_path: путь к файлу кэша
+    :param chunk_size: размер чанка
+    :param pp_settings: настройки препроцессора
+    :return: чанк
     """
-    for raw_file in raw_files:
-        if not os.path.exists(cache_folder):
-            os.mkdir(cache_folder)
-        cache_file_name = f"{os.path.basename(raw_file).split('.')[0]}.invalid"
-        cache_file_path = os.path.join(cache_folder, cache_file_name)
-        cache_file = open(cache_file_path, "w")
+    cache_invalid_name = f"{os.path.basename(raw_file).split('.')[0]}.invalid"
+    cache_invalid_path = os.path.join(os.path.dirname(cache_path), cache_invalid_name)
+    with open(cache_invalid_path, "w") as cache_file:
         cache_header = True
-        for pp_chunk in pp_generator(raw_files=[raw_file], chunk_size=chunk_size, **pp_settings):
+        for pp_chunk in pp_from_raw_generator(raw_file=raw_file, chunk_size=chunk_size, **pp_settings):
             pp_chunk.to_csv(cache_file, encoding="utf8", sep="\t", index=False, header=cache_header)
             cache_header = False
             yield pp_chunk
-        cache_file.close()
-        new_cache_name = f"{cache_file_name.split('.')[0]}_clear.csv"
-        new_cache_path = os.path.join(cache_folder, new_cache_name)
-        if os.path.exists(new_cache_path):
-            os.remove(new_cache_path)
-        os.rename(cache_file_path, new_cache_path)
+    if os.path.exists(cache_path):
+        os.remove(cache_path)
+    os.rename(cache_invalid_path, cache_path)
 
 
-def create_w2v(pp_source, vector_dim: int) -> Word2Vec:
+def create_w2v(pp_sources: list, vector_dim: int) -> Word2Vec:
     """
     Создать модель Word2Vec для предобработанных текстов.
     :param vector_dim: размерность векторной модели
-    :param pp_source: инстанс генератора предобработанных данных (pp_generator или caching_pp_generator)
+    :param pp_sources: список инстансов генератора предобработанных данных (pp_generator или caching_pp_generator)
     :returns обученная модель Word2Vec
     """
     w2v = Word2Vec(size=vector_dim, window=4, min_count=3, workers=3)
     init = False
-    for pp_chunk in pp_source:
-        sentence = [text.split() for text in pp_chunk["text"].values]
-        w2v.build_vocab(sentence, update=init)
-        # TODO: вынести количество эпох и размер окна в параметры
-        w2v.train(sentence, epochs=20, total_examples=len(sentence))
-        init = True
+    for pp_source in pp_sources:
+        for pp_chunk in pp_source:
+            sentence = [text.split() for text in pp_chunk["text"].values]
+            w2v.build_vocab(sentence, update=init)
+            # TODO: вынести количество эпох и размер окна в параметры
+            w2v.train(sentence, epochs=20, total_examples=len(sentence))
+            init = True
     return w2v
 
 
@@ -104,15 +103,9 @@ def load_w2v(w2v_path: str) -> tuple:
     return w2v_model, lang
 
 
-def vector_from_csv_generator(vector_paths: list, chunk_size: int):
-    for path in vector_paths:
-        if path.endswith(".csv"):
-            for chunk in pd.read_csv(path, index_col=0, sep="\t", chunksize=chunk_size):
-                yield chunk
-        elif path.endswith(".pkl"):
-            pass
-        else:
-            raise ValueError("Unsupported vector file type")
+def vector_from_csv_generator(vector_path: str, chunk_size: int):
+    for chunk in pd.read_csv(vector_path, index_col=0, sep="\t", chunksize=chunk_size):
+        yield chunk
 
 
 def vectorize_text(text: str, w2v_model: Word2Vec, conv_type: str) -> np.ndarray:
@@ -150,26 +143,27 @@ def vectorize_pp_chunk(pp_chunk: pd.DataFrame, w2v_model: Word2Vec, conv_type: s
     return pp_chunk
 
 
-def caching_vector_generator(pp_paths: list,
+def caching_vector_generator(pp_source,
                              w2v_file: str,
-                             cache_folder: str,
-                             chunk_size: int,
-                             conv_type: str):
+                             cache_path: str,
+                             conv_type: str) -> pd.DataFrame:
+    """
+    Кэширующий генератор векторов
+    :param pp_source: генератор предобработанных чанков
+    :param w2v_file: путь к файлу модели Word2Vec
+    :param cache_path: путь к файлу кэша
+    :param conv_type: тип свертки матрицы текста: sum, mean или max
+    :return: чанк в формате pd.Dataframe
+    """
     model, lang = load_w2v(w2v_file)
-
-    if not os.path.exists(cache_folder):
-        os.mkdir(cache_folder)
     metadata = {
         "language": lang,
         "conv_type": conv_type
     }
-    for path in pp_paths:
-        cache_file_name = f"{os.path.basename(path).split('_clear.')[0]}.invalid"
-        cache_file_path = os.path.join(cache_folder, cache_file_name)
-        cache_file = open(cache_file_path, "wb")
+    cache_invalid_path = f"{os.path.basename(cache_path)}.invalid"
+    with open(cache_invalid_path, "wb") as cache_file:
         pickle.dump(metadata, cache_file)
-        pp_gen = pd.read_csv(path, encoding="cp1251", sep="\t", index_col="id", chunksize=chunk_size)
-        for pp_chunk in pp_gen:
+        for pp_chunk in pp_source:
             vector_chunk = vectorize_pp_chunk(pp_chunk, w2v_model=model, conv_type=conv_type)
             for row in vector_chunk.index:
                 entry = (
@@ -180,12 +174,9 @@ def caching_vector_generator(pp_paths: list,
                 )
                 pickle.dump(entry, cache_file)
             yield vector_chunk
-        cache_file.close()
-        new_cache_name = f"{cache_file_name.split('.')[0]}_vectors.pkl"
-        new_cache_path = os.path.join(cache_folder, new_cache_name)
-        if os.path.exists(new_cache_path):
-            os.remove(new_cache_path)
-        os.rename(cache_file_path, new_cache_path)
+    if os.path.exists(cache_path):
+        os.remove(cache_path)
+    os.rename(cache_invalid_path, cache_path)
 
 
 def read_pkl_metadata(pkl_path: str) -> dict:
@@ -222,6 +213,11 @@ def vector_from_pkl_generator(pkl_path: str, chunk_size: int) -> pd.DataFrame:
             break
     if len(chunk["vectors"]) > 0:
         yield pd.DataFrame(chunk)
+
+
+def create_vector_generator():
+    # TODO
+    pass
 
 
 if __name__ == '__main__':
