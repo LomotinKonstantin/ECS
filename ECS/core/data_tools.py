@@ -6,6 +6,21 @@ import numpy as np
 from gensim.models import Word2Vec
 
 from ECS.preprocessor.Preprocessor2 import Preprocessor
+from ECS.interface.valid_config import ValidConfig
+
+
+def dicts_equal(d1: dict, d2: dict, ignore_keys=()) -> bool:
+    keys1 = set(d1.keys())
+    keys2 = set(d2.keys())
+    for i in ignore_keys:
+        keys1.discard(i)
+        keys2.discard(i)
+    if keys1 != keys2:
+        return False
+    for key in keys1:
+        if d1[key] != d2[key]:
+            return False
+    return True
 
 
 def pp_from_raw_generator(raw_file: str, chunk_size: int, **pp_settings) -> pd.DataFrame:
@@ -34,8 +49,7 @@ def caching_pp_generator(raw_file: str,
     :param pp_settings: настройки препроцессора
     :return: чанк
     """
-    cache_invalid_name = f"{os.path.basename(raw_file).split('.')[0]}.invalid"
-    cache_invalid_path = os.path.join(os.path.dirname(cache_path), cache_invalid_name)
+    cache_invalid_path = f"{cache_path}.invalid"
     with open(cache_invalid_path, "w") as cache_file:
         cache_header = True
         for pp_chunk in pp_from_raw_generator(raw_file=raw_file, chunk_size=chunk_size, **pp_settings):
@@ -146,22 +160,27 @@ def vectorize_pp_chunk(pp_chunk: pd.DataFrame, w2v_model: Word2Vec, conv_type: s
 def caching_vector_generator(pp_source,
                              w2v_file: str,
                              cache_path: str,
-                             conv_type: str) -> pd.DataFrame:
+                             conv_type: str,
+                             pp_metadata: dict) -> pd.DataFrame:
     """
     Кэширующий генератор векторов
+    :param pp_metadata: словарь с настройками препроцессора.
+            Есть смысл сохранять только поля remove_stopwords и normalization,
     :param pp_source: генератор предобработанных чанков
     :param w2v_file: путь к файлу модели Word2Vec
     :param cache_path: путь к файлу кэша
     :param conv_type: тип свертки матрицы текста: sum, mean или max
     :return: чанк в формате pd.Dataframe
     """
-    model, lang = load_w2v(w2v_file)
+    model, lang = load_w2v(w2v_file)    # type: Word2Vec
     metadata = {
+        "vector_dim": model.vector_size,
         "language": lang,
-        "conv_type": conv_type
+        "pooling": conv_type,
+        **pp_metadata
     }
-    cache_invalid_path = f"{os.path.basename(cache_path)}.invalid"
-    with open(cache_invalid_path, "wb") as cache_file:
+    cache_invalid_path = f"{cache_path}.invalid"
+    with open(cache_invalid_path, "bw") as cache_file:
         pickle.dump(metadata, cache_file)
         for pp_chunk in pp_source:
             vector_chunk = vectorize_pp_chunk(pp_chunk, w2v_model=model, conv_type=conv_type)
@@ -170,7 +189,7 @@ def caching_vector_generator(pp_source,
                     vector_chunk.loc[row, "vectors"],
                     vector_chunk.loc[row, "subj"],
                     vector_chunk.loc[row, "ipv"],
-                    vector_chunk.loc[row, "rgnti"],
+                    vector_chunk.loc[row, "rgnti"]
                 )
                 pickle.dump(entry, cache_file)
             yield vector_chunk
@@ -180,8 +199,8 @@ def caching_vector_generator(pp_source,
 
 
 def read_pkl_metadata(pkl_path: str) -> dict:
-    pkl_file = open(pkl_path, "rb")
-    metadata = pickle.load(pkl_file)
+    with open(pkl_path, "rb") as pkl_file:
+        metadata = pickle.load(pkl_file)
     return metadata
 
 
@@ -211,12 +230,72 @@ def vector_from_pkl_generator(pkl_path: str, chunk_size: int) -> pd.DataFrame:
                 }
         except EOFError:
             break
+    pkl_file.close()
     if len(chunk["vectors"]) > 0:
         yield pd.DataFrame(chunk)
 
 
-def create_vector_generator():
-    # TODO
+def find_cached_vectors(base_dir: str, metadata_filter: dict) -> dict:
+    """
+    Найти закэшированные векторы, отвечающие условиям
+    :param base_dir: директория датасета для начала поиска
+    :param metadata_filter: словарь с настройками препроцессора, типом пулинга и языком
+    :return: словарь путей к найденным файлам вида
+             {"абс_путь_к_папке": "абс_путь_к_файлу"}
+    """
+    vector_files = {}
+    for entry in os.scandir(base_dir):  # type: os.DirEntry
+        if not (entry.is_dir() and entry.name.endswith("_vectors")):
+            continue
+        for file in os.scandir(entry.path):  # type: os.DirEntry
+            if file.name.endswith(".pkl"):
+                file_metadata = read_pkl_metadata(file.path)
+                if dicts_equal(file_metadata, metadata_filter):
+                    vector_files.setdefault(entry.path, [])
+                    vector_files[entry.path].append(file.path)
+            elif file.name.endswith(".csv"):
+                settings_path = os.path.join(entry.path, "settings.ini")
+                if not os.path.exists(settings_path):
+                    continue
+                config = ValidConfig()
+                config.read(settings_path, encoding="cp1251")
+                file_metadata = {}
+                for key in ["normalization", "language"]:
+                    file_metadata[key] = config.get("Preprocessing", key)
+                file_metadata["remove_stopwords"] = config.get("Preprocessing", "remove_stopwords").lower() == "true"
+                file_metadata["vector_dim"] = config.getint("WordEmbedding", "vector_dim")
+                file_metadata["pooling"] = config.get("WordEmbedding", "pooling")
+                if dicts_equal(file_metadata, metadata_filter):
+                    vector_files.setdefault(entry.path, [])
+                    vector_files[entry.path].append(file.path)
+    return vector_files
+
+
+def find_cached_clear(base_dir: str, metadata_filter: dict) -> dict:
+    clear_files = {}
+    for entry in os.scandir(base_dir):  # type: os.DirEntry
+        if not (entry.is_dir() and entry.name.endswith("_clear")):
+            continue
+        for file in os.scandir(entry.path):  # type: os.DirEntry
+            if file.name.endswith(".csv"):
+                settings_path = os.path.join(entry.path, "settings.ini")
+                if not os.path.exists(settings_path):
+                    continue
+                config = ValidConfig()
+                config.read(settings_path, encoding="cp1251")
+                file_metadata = {}
+                for key in ["normalization", "language"]:
+                    file_metadata[key] = config.get("Preprocessing", key)
+                file_metadata["remove_stopwords"] = config.get("Preprocessing", "remove_stopwords").lower() == "true"
+                file_metadata["vector_dim"] = config.getint("WordEmbedding", "vector_dim")
+                file_metadata["pooling"] = config.get("WordEmbedding", "pooling")
+                if dicts_equal(file_metadata, metadata_filter):
+                    clear_files.setdefault(entry.path, [])
+                    clear_files[entry.path].append(file.path)
+    return clear_files
+
+
+def training_data_generator(vector_gen) -> np.ndarray:
     pass
 
 

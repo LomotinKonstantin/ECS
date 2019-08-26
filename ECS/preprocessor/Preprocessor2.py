@@ -105,7 +105,7 @@ class Preprocessor:
     md_file = "viniti_md.txt"
     standard_columns = ["id", "text", "subj", "ipv", "rgnti"]
 
-    DEBUG = True
+    DEBUG = False
 
     def __init__(self, groups_to_save=("буквы рус.", "пробел", "дефис", "буквы лат.")):
         """
@@ -407,7 +407,7 @@ class Preprocessor:
         result = []
         if len(un_df.index) > batch_size:
             for i in range(batches - 1):
-                print("Part", i + 1, "/", batches)
+                # print("Part", i + 1, "/", batches)
                 raw_part = self.delim.join(un_df.text.values[batch_size * i: batch_size * (i + 1)])
                 new_part = self.preprocess(text=raw_part,
                                            remove_stopwords=remove_stopwords,
@@ -417,7 +417,7 @@ class Preprocessor:
                                            default_lang=default_lang)
                 if new_part is not None:
                     result += new_part.split(self.delim)
-            print("Part", batches, "/", batches)
+            # print("Part", batches, "/", batches)
             raw_part = self.delim.join(un_df.text.values[batch_size * (batches - 1): len(un_df.index)])
             new_part = self.preprocess(text=raw_part,
                                        remove_stopwords=remove_stopwords,
@@ -429,7 +429,7 @@ class Preprocessor:
                 result += new_part.split(self.delim)
             self.__trace_time("Batch preprocessing")
         else:
-            print("DF size < batch_size")
+            # print("DF size < batch_size")
             raw_part = self.delim.join(un_df.text.values)
             new_part = self.preprocess(text=raw_part,
                                        remove_stopwords=remove_stopwords,
@@ -446,7 +446,7 @@ class Preprocessor:
             raise IndexError("Regexp has devoured sth again :(")
         un_df.text = list(map(lambda x: x.strip(), result))
         self.__trace_time("Stripping")
-        print("Successfully processed", len(result), "texts of ", len(df.index))
+        # print("Successfully processed", len(result), "texts of ", len(df.index))
         return un_df
 
     def preprocess_file(self, fn_in: str, fn_out: str,

@@ -8,20 +8,6 @@ from ECS.interface.index import Index
 from ECS.preprocessor.Preprocessor2 import Preprocessor
 
 
-def dicts_equal(d1: dict, d2: dict, ignore_keys=()) -> bool:
-    keys1 = set(d1.keys())
-    keys2 = set(d2.keys())
-    for i in ignore_keys:
-        keys1.discard(i)
-        keys2.discard(i)
-    if keys1 != keys2:
-        return False
-    for key in keys1:
-        if d1[key] != d2[key]:
-            return False
-    return True
-
-
 def append_to_fname(fname: str, append: str) -> str:
     components = fname.split(".")
     components[-2] += append
