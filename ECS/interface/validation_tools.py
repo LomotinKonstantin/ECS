@@ -1,4 +1,3 @@
-from importlib import import_module
 import sys
 
 
@@ -74,15 +73,6 @@ def str_to_bool(value: str) -> bool:
     if not is_bool(value):
         raise ValueError(f"'{value}' does not represent boolean value")
     return value.lower() == "true"
-
-
-def load_class(classpath: str):
-    components = classpath.split(".")
-    class_name = components[-1]
-    module_name = ".".join(components[:-1])
-    module = import_module(module_name)
-    class_type = getattr(module, class_name)
-    return class_type
 
 
 def val_assert(condition: bool, error_msg: str, leave=True) -> None:
