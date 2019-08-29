@@ -1,138 +1,64 @@
 import os
+from collections import OrderedDict
+
 import pandas as pd
 
 
-class CodesHelper:
-    def __init__(self, ipv_name=None, ipv_change=None, clear_math=True):
-        self.ipv_codes = self.load_ipv_codes(ipv_name, clear_math)
-        self.ipv_change = self.load_ipv_change(ipv_change)
-        if clear_math:
-            # print('!!! Math')
-            self.subj_codes = ['e1', 'e2', 'e3', 'e4', 'e5', 'e7', 'e9',
-                               'f1', 'f2', 'f3', 'f4', 'f5', 'f7', 'f8', 'f9']
-        else:
-            self.subj_codes = ['e1', 'e2', 'e3', 'e4', 'e5', 'e7', 'e8', 'e9',
-                               'f1', 'f2', 'f3', 'f4', 'f5', 'f7', 'f8', 'f9']
+class RubricManager:
+    def __init__(self,
+                 ipv_subj_match_file=None,
+                 ipv_update_file=None,
+                 remove_math=True):
+        if ipv_subj_match_file is None:
+            ipv_subj_match_file = os.path.join(os.path.dirname(__file__), "RJ_code_21017_utf8.txt")
+        if ipv_update_file is None:
+            ipv_update_file = os.path.join(os.path.dirname(__file__), "Replacement_RJ_code_utf8.txt")
+        self.ipv_subj_descr = self._load_ipv_codes(ipv_path=ipv_subj_match_file,
+                                                   ipv_update_file=ipv_update_file,
+                                                   remove_math=remove_math)
+        self.subj = ['e1', 'e2', 'e3', 'e4', 'e5', 'e7', 'e8', 'e9',
+                     'f1', 'f2', 'f3', 'f4', 'f5', 'f7', 'f8', 'f9']
+        if remove_math:
+            self.subj.remove("e8")
 
     @staticmethod
-    def clear_null(data: pd.DataFrame, column_name: str):
-        data.index.name = 'index'
-        data = data.reset_index()
-        data = data.drop(data[data[column_name].isnull()].index)
-        data = data.set_index(data['index']).drop('index', axis=1)
-        return data
+    def _load_ipv_codes(ipv_path: str,
+                        ipv_update_file: str,
+                        remove_math: bool) -> pd.DataFrame:
+        """
+        Загрузить и обновить коды IPV
+        :param ipv_path:
+        :param ipv_update_file:
+        :param remove_math:
+        :return:
+        """
+        ipv_match_df = pd.read_csv(ipv_path, sep='\t', names=["ipv", "subj", "descr"])
+        replacement_scheme = pd.read_csv(ipv_update_file, sep='\t', names=["new"], index_col=0).to_dict()["new"]
+        ipv_match_df.replace(replacement_scheme, inplace=True)
+        if remove_math:
+            math_indices = ipv_match_df.index[list(map(lambda x: x.startswith("13"),
+                                                       ipv_match_df["ipv"]))]
+            ipv_match_df.drop(index=math_indices, inplace=True)
+        return ipv_match_df
 
     @staticmethod
-    def load_ipv_codes(ipv_name: str, clear_math: bool):
+    def cut_rgnti(data: pd.DataFrame) -> None:
         """
-        Loads ipv codes if path is valid.
+        Переводит столбец rgnti в формат xx.xx
+        :param data: датафрейм со столбцом "rgnti"
+        :return: None
+        """
+        data["rgnti"] = data["rgnti"].apply(lambda x: x[:5])
 
-        Args:
-        ipv_name    -- absolute or relative path to the ipv codes file.
-        """
-        if ipv_name and os.path.exists(ipv_name):
-            ipv_codes = list(pd.read_csv(ipv_name, sep='\t', header=None)[0])
-            if clear_math:
-                math = []
-                for i in ipv_codes:
-                    if i.startswith('13'):
-                        math += [i]
-                ipv_codes = list(set(ipv_codes) - set(math))
-        else:
-            ipv_codes = None
-        return ipv_codes
+    @property
+    def ipv(self):
+        ipv_list = self.ipv_subj_descr["ipv"].values
+        # После замены образовались дублирующиеся коды
+        return list(OrderedDict.fromkeys(ipv_list))
 
-    @staticmethod
-    def load_ipv_change(ipv_change_file: str):
-        """
-        Loads ipv changes file if path is valid.
-
-        Args:
-        ipv_change: absolute or relative path to the ipv changes file with two columns
-                    separated with tab: original ipv code and it's change.
-        """
-        if ipv_change_file and os.path.exists(ipv_change_file):
-            ipv_change = pd.read_csv(ipv_change_file, sep='\t', header=None)
-        else:
-            ipv_change = None
-        return ipv_change
-        
-        #############################
-#         ToDo Test
-    
-    def change_ipv(self, data):
-        """
-        Changes ipv column in pd.dataFrame according to ipv_change.
-
-        Args:
-        data          -- pd.DataFrame with ipv column.
-        clear_math    -- boolean parameter. If True math SRSTI (13) will be cleared.
-        """
-        data = self.clear_null(data, 'ipv')
-        for i in self.ipv_change.index:
-            temp = list(self.ipv_change.loc[i])
-            data.ipv[data.ipv == temp[0]] = temp[1]
-        codes = list(set(self.ipv_codes))
-        # if self.clear_math:
-        #     math = []
-        #     for i in self.ipv_codes:
-        #         if i.startswith('13'):
-        #             math += [i]
-        #     codes = list(set(self.ipv_codes)-set(math))
-        clear = list(set(list(data.ipv.unique()))-set(codes))
-        if clear:
-            for i in list(set(list(data.ipv.unique()))-set(codes)):
-                idx = data[data.ipv == i].index
-                if idx.size == 0:
-                    data = data.drop(idx, axis=0)
-        return data
-    
-    def change_subj(self, data):
-        data = self.clear_null(data, 'subj')
-        if data.subj.isnull().any():
-            data.index.name = 'index'
-            data = data.reset_index()
-        codes = list(set(data.subj.unique())-set(self.subj_codes))
-        for i in codes:
-            data = data.drop(data[data.subj == i].index, axis=0)
-        if data.subj.isnull().any():
-            data = data.set_index(data['index']).drop('index', axis=1)
-        return data
-    
-    def change_rgnti(self, data):
-        data = self.clear_null(data, 'rgnti')
-        data.rgnti = self.cut_rgnti(data.rgnti)
-        return data
-    #############################
-    
-    def get_codes(self, name):
-        """
-        Gives list with all valid codes of a rubricator.
-
-        Args:
-        name        -- string rubricator name in VINITI format ("SUBJ", "IPV", etc.)
-        """
-        if name.lower() == 'ipv':
-            return self.ipv_codes
-        elif name.lower() == 'subj':
-            s = self.subj_codes
-        else:
-            print('Name must be SUBJ or IPV')
-            return None
-        return s
-
-    def cut_rgnti(self, data):
-        """
-        Transforms rgnti code into xx.xx format.
-
-        Args:
-        data        -- list/pd.Series with rgnti column.
-        """
-        for i in data.unique():
-            if type(i) == str:
-                data[data == str(i)] = str(i)[:5]
-        return data
-
+    # @property
+    # def grnti(self):
+    #     return self.ipv_subj_descr["rgnti"].values
 #
 # if __name__ == '__main__':
 #     ch = Codes_helper()

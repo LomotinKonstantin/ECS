@@ -23,7 +23,7 @@ from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_sc
 from sklearn.metrics import confusion_matrix
 
 # from Codes_helper import Codes_helper
-from .codes_helper import CodesHelper
+from .codes_helper import RubricManager
 
 
 class Worker():
@@ -457,7 +457,7 @@ class Worker():
         split_ratio (int): needed if there ae no test data specified in self.data_test.
         """
         self.__check_rubr_id()
-        helper = CodesHelper(clear_math=not(self.math))
+        helper = RubricManager(clear_math=not(self.math))
         if self.rubr_id == 'ipv':
             helper.load_ipv_codes(os.path.join(os.path.dirname(__file__), path_ipv_codes))
             helper.load_ipv_change(os.path.join(os.path.dirname(__file__), path_replacement))
@@ -506,8 +506,8 @@ class Worker():
                 y_train = self.data_train.ipv
                 y_test  = self.data_test.ipv
             elif self.rubr_id == 'rgnti':
-                y_train = CodesHelper().cut_rgnti(self.data_train.rgnti)
-                y_test  = CodesHelper().cut_rgnti(self.data_test.rgnti)
+                y_train = RubricManager().cut_rgnti(self.data_train.rgnti)
+                y_test  = RubricManager().cut_rgnti(self.data_test.rgnti)
             X_train = self.data_train[list(map(str, np.arange(size+1)))]
             X_test  = self.data_test[list(map(str, np.arange(size+1)))]
             X_test, y_test = self.__change_test(X_test, y_test)
@@ -747,7 +747,7 @@ class Worker():
         """
         if legend is None:
             if self.rubr_id == 'subj':
-                legend = CodesHelper(clear_math=not(self.math)).get_codes('subj')
+                legend = RubricManager(clear_math=not(self.math)).get_codes('subj')
             else:
                 legend = [item for sublist in y_test for item in sublist]
                 legend = pd.Series(map(str, legend))
