@@ -61,14 +61,18 @@ def caching_pp_generator(raw_file: str,
     os.rename(cache_invalid_path, cache_path)
 
 
-def create_w2v(pp_sources: list, vector_dim: int) -> Word2Vec:
+def create_w2v(pp_sources: list,
+               vector_dim: int,
+               window_size: int) -> Word2Vec:
     """
     Создать модель Word2Vec для предобработанных текстов.
+    :param window_size: размер окна контекста
     :param vector_dim: размерность векторной модели
-    :param pp_sources: список инстансов генератора предобработанных данных (pp_generator или caching_pp_generator)
+    :param pp_sources: список инстансов генератора
+                       предобработанных данных (pp_generator или caching_pp_generator)
     :returns обученная модель Word2Vec
     """
-    w2v = Word2Vec(size=vector_dim, window=4, min_count=3, workers=3)
+    w2v = Word2Vec(size=vector_dim, min_count=3, workers=3, window=window_size)
     init = False
     for pp_source in pp_sources:
         for pp_chunk in pp_source:
@@ -82,7 +86,6 @@ def create_w2v(pp_sources: list, vector_dim: int) -> Word2Vec:
 
 def generate_w2v_fname(vector_dim: int,
                        language: str,
-                       dataset_size: int,
                        version=1,
                        additional_info=None) -> str:
     """
@@ -90,7 +93,6 @@ def generate_w2v_fname(vector_dim: int,
     Для правильной работы ATC получает информацию о модели из имени файла.
     :param vector_dim: размерность векторной модели
     :param language: язык словаря
-    :param dataset_size: размер обучающего датасета
     :param version: [опционально] версия
     :param additional_info: [опционально] допольнительная короткая строка с информацией
     :return: сгенерированное имя файла
@@ -98,7 +100,7 @@ def generate_w2v_fname(vector_dim: int,
     import datetime
     now = datetime.datetime.today()
     date = f"{now.day}_{now.month}_{str(now.year)[2:]}"
-    name = f"w2v_model_{vector_dim}_{language}_{dataset_size // 1000}k"
+    name = f"w2v_model_{vector_dim}_{language}"
     if additional_info is None:
         name = f"{name}_v{version}_{date}.model"
     else:
@@ -287,20 +289,66 @@ def find_cached_clear(base_dir: str, metadata_filter: dict) -> dict:
                 for key in ["normalization", "language"]:
                     file_metadata[key] = config.get("Preprocessing", key)
                 file_metadata["remove_stopwords"] = config.get("Preprocessing", "remove_stopwords").lower() == "true"
-                file_metadata["vector_dim"] = config.getint("WordEmbedding", "vector_dim")
-                file_metadata["pooling"] = config.get("WordEmbedding", "pooling")
-                if dicts_equal(file_metadata, metadata_filter):
+                if dicts_equal(file_metadata, metadata_filter, ignore_keys=["vector_dim", "pooling"]):
                     clear_files.setdefault(entry.path, [])
                     clear_files[entry.path].append(file.path)
     return clear_files
 
 
-def training_data_generator(vector_gen) -> np.ndarray:
-    pass
+def training_data_generator(vector_gen, rubricator: str) -> tuple:
+    """
+    Генератор обучающих пар (X, y)
+    Так как большая часть моделей не умеет работать с несколькими метками у одного текста,
+    векторы размножаются таким образом, чтобы каждому соответствовала только одна метка
+    :param rubricator: "subj", "ipv" или "rgnti"
+    :param vector_gen: генератор векторов
+    :return: пара (X, y), где X - numpy 2-D array,
+                              y - list-like коллекция строковых меток
+    """
+    for vec_chunk in vector_gen:
+        x = []
+        y = []
+        for row in vec_chunk.index:
+            codes = vec_chunk.loc[row, rubricator].split("\\")
+            for code in codes:
+                vec = vec_chunk.loc[row, "vectors"]
+                x.append(vec)
+                if rubricator == "rgnti":
+                    code = code[:5]
+                y.append(code)
+        yield (x, y)
+
+
+def aggregate_training_dataset(training_x_y_generator) -> tuple:
+    """
+    Заглушка для неприятной особенности - sklearn не умеет
+    учиться инкрементально. Придется собирать датасет в память.
+    :param training_x_y_generator: источник обучающих пар чанков
+    :return:
+    """
+    x = []
+    y = []
+    for x_chunk, y_chunk in training_x_y_generator:
+        x.extend(x_chunk)
+        y.extend(y_chunk)
+    return x, y
+
+
+# def create_vector_generator(base_dir: str, chunk_size: int,
+#                             pp_settings: dict, w2_settings: dict):
+#     """
+#     Создать источник векторов исходя из существования кэша
+#     :param base_dir: базовая директория для поиска кэша
+#     :param chunk_size: размер чанка
+#     :param pp_settings: словарь настроек препроцессора: columns, remove_stopwords, remove_formulas,
+#                                                         normalization, kw_delim, language, default_lang,
+#                                                         batch_size
+#     :param w2_settings: словарь настроек w2v:
+#     :return:
+#     """
 
 
 if __name__ == '__main__':
     print(generate_w2v_fname(vector_dim=100,
                              language="ch",
-                             dataset_size=88005553535,
                              version=42, additional_info="wow"))
