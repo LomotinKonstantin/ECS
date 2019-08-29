@@ -4,6 +4,7 @@ from os.path import split as os_split
 from os import linesep
 
 from ECS.interface.validation_tools import *
+from ECS.core.model_tools import load_class
 
 
 class ValidConfig(ConfigParser):
@@ -192,35 +193,27 @@ class ValidConfig(ConfigParser):
         um_option_exists = use_model != ""
         if um_option_exists:
             val_assert(exists(use_model), "Cannot find model {}".format(use_model))
-            options = {"vector_dim", "pooling"}
-            for key in options:
-                self.__check_option_entry(section, key)
-                value = self.get(section, key)
-                val_assert(value != "", 'Missing value of "{}" option'.format(key))
-            vector_dim = self.get(section, "vector_dim")
-            #
-            val_assert(is_int(vector_dim) and int(vector_dim) > 0,
-                       "Invalid value of 'vector_dim:'\n"
-                       "Only positive integers are supported")
-            #
-            pooling_options = parse_plain_sequence(self.map_config.get("Supported", "pooling"))
-            self.__check_value(section, "pooling", pooling_options)
             print("Using specified Word2Vec model: {}".format(use_model))
         else:
-            options = {"vector_dim", "pooling"}
-            for key in options:
-                self.__check_option_entry(section, key)
-                value = self.get(section, key)
-                val_assert(value != "", 'Missing value of "{}" option'.format(key))
-            vector_dim = self.get(section, "vector_dim")
-            #
-            val_assert(is_int(vector_dim) and int(vector_dim) > 0,
-                       "Invalid value of 'vector_dim:'\n"
-                       "Only positive integers are supported")
-            #
-            pooling_options = parse_plain_sequence(self.map_config.get("Supported", "pooling"))
-            self.__check_value(section, "pooling", pooling_options)
             print("W2V model is not specified, new model will be created")
+        options = ("vector_dim", "pooling", "window")
+        for key in options:
+            self.__check_option_entry(section, key)
+            value = self.get(section, key)
+            val_assert(value != "", 'Missing value of "{}" option'.format(key))
+        #
+        vector_dim = self.get(section, "vector_dim")
+        val_assert(is_int(vector_dim) and int(vector_dim) > 0,
+                   "Invalid value of 'vector_dim:'\n"
+                   "Only positive integers are supported")
+        #
+        pooling_options = parse_plain_sequence(self.map_config.get("Supported", "pooling"))
+        self.__check_value(section, "pooling", pooling_options)
+        #
+        window = self.get(section, "window")
+        val_assert(is_int(window) and int(window) > 0,
+                   "Invalid value of 'vector_dim:'\n"
+                   "Only positive integers are supported")
 
     def validate_normalization(self, valid_lang: str) -> None:
         pp_map_config = ConfigParser()
@@ -275,16 +268,16 @@ class ValidConfig(ConfigParser):
                        'Value "{}" of the option "{}" is not supported.\n'
                        'Supported values: {}'.format(i, option, ", ".join(map(str, supported))))
 
-    def get_model_types(self):
-        model_types = []
-        for m in self.get_as_list("Experiment", "models"):
-            path = self.map_config.get("SupportedModels", m)
-            model_types.append(load_class(path))
-        return model_types
+    # def get_model_types(self):
+    #     model_types = []
+    #     for m in self.get_as_list("Experiment", "models"):
+    #         path = self.map_config.get("SupportedModels", m)
+    #         model_types.append(load_class(path))
+    #     return model_types
 
-    def get_model_type(self, model):
-        path = self.map_config.get("SupportedModels", model)
-        return load_class(path)
+    # def get_model_type(self, model):
+    #     path = self.map_config.get("SupportedModels", model)
+    #     return load_class(path)
 
     def get_hyperparameters(self, model: str):
         hypers = {}
