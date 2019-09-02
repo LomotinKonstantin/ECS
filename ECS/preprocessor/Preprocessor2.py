@@ -45,9 +45,9 @@ class Normalizer:
         else:
             alg = self.class_type()
             if hasattr(alg, 'stem'):
-                token_list = alg.stem(text)
+                token_list = [alg.stem(word) for word in text.split()]
             elif hasattr(alg, 'lemmatize'):
-                token_list = alg.lemmatize(text)
+                token_list = [alg.lemmatize(word) for word in text.split()]
             else:
                 raise ValueError(f"Algorithm {alg} has unknown API")
         # Выбор формата результата
