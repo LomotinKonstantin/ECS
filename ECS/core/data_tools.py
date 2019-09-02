@@ -4,6 +4,7 @@ import pickle
 import pandas as pd
 import numpy as np
 from gensim.models import Word2Vec
+from sklearn.model_selection import train_test_split
 
 from ECS.preprocessor.Preprocessor2 import Preprocessor
 from ECS.interface.valid_config import ValidConfig
@@ -34,6 +35,11 @@ def pp_from_raw_generator(raw_file: str, chunk_size: int, **pp_settings) -> pd.D
     for chunk in pd.read_csv(raw_file, encoding="cp1251", quoting=3, sep="\t", chunksize=chunk_size):
         pp_chunk = pp.preprocess_dataframe(df=chunk, **pp_settings)
         yield pp_chunk
+
+
+def pp_from_csv_generator(clear_csv_path: str, chunk_size: int) -> pd.DataFrame:
+    for chunk in pd.read_csv(clear_csv_path, sep="\t", encoding="cp1251", chunksize=chunk_size):
+        yield chunk
 
 
 def caching_pp_generator(raw_file: str,
@@ -78,10 +84,17 @@ def create_w2v(pp_sources: list,
         for pp_chunk in pp_source:
             sentence = [text.split() for text in pp_chunk["text"].values]
             w2v.build_vocab(sentence, update=init)
-            # TODO: вынести количество эпох и размер окна в параметры
+            # TODO: вынести количество эпох в параметры
             w2v.train(sentence, epochs=20, total_examples=len(sentence))
             init = True
     return w2v
+
+
+def timestamp() -> str:
+    import datetime
+    now = datetime.datetime.today()
+    date = f"{now.hour}-{now.minute}_{now.day}_{now.month}_{str(now.year)[2:]}"
+    return date
 
 
 def generate_w2v_fname(vector_dim: int,
@@ -160,7 +173,7 @@ def vectorize_pp_chunk(pp_chunk: pd.DataFrame, w2v_model: Word2Vec, conv_type: s
 
 
 def caching_vector_generator(pp_source,
-                             w2v_file: str,
+                             w2v_file,
                              cache_path: str,
                              conv_type: str,
                              pp_metadata: dict) -> pd.DataFrame:
@@ -169,16 +182,20 @@ def caching_vector_generator(pp_source,
     :param pp_metadata: словарь с настройками препроцессора.
             Есть смысл сохранять только поля remove_stopwords и normalization,
     :param pp_source: генератор предобработанных чанков
-    :param w2v_file: путь к файлу модели Word2Vec
+    :param w2v_file: путь к файлу модели Word2Vec или сам объект модели
     :param cache_path: путь к файлу кэша
     :param conv_type: тип свертки матрицы текста: sum, mean или max
     :return: чанк в формате pd.Dataframe
     """
-    model, lang = load_w2v(w2v_file)    # type: Word2Vec
+    if isinstance(w2v_file, str):
+        model, _ = load_w2v(w2v_file)    # type: Word2Vec
+    else:
+        model = w2v_file
     metadata = {
         "vector_dim": model.vector_size,
-        "language": lang,
+        # "language": lang,
         "pooling": conv_type,
+        "window": model.window,
         **pp_metadata
     }
     cache_invalid_path = f"{cache_path}.invalid"
@@ -243,7 +260,7 @@ def find_cached_vectors(base_dir: str, metadata_filter: dict) -> dict:
     :param base_dir: директория датасета для начала поиска
     :param metadata_filter: словарь с настройками препроцессора, типом пулинга и языком
     :return: словарь путей к найденным файлам вида
-             {"абс_путь_к_папке": "абс_путь_к_файлу"}
+             {"абс_путь_к_папке": ["абс_путь_к_файлу1", "абс_путь_к_файлу2"]}
     """
     vector_files = {}
     for entry in os.scandir(base_dir):  # type: os.DirEntry
@@ -262,11 +279,10 @@ def find_cached_vectors(base_dir: str, metadata_filter: dict) -> dict:
                 config = ValidConfig()
                 config.read(settings_path, encoding="cp1251")
                 file_metadata = {}
-                for key in ["normalization", "language"]:
-                    file_metadata[key] = config.get("Preprocessing", key)
-                file_metadata["remove_stopwords"] = config.get("Preprocessing", "remove_stopwords").lower() == "true"
-                file_metadata["vector_dim"] = config.getint("WordEmbedding", "vector_dim")
-                file_metadata["pooling"] = config.get("WordEmbedding", "pooling")
+                for key in ["normalization", "language", "remove_stopwords"]:
+                    file_metadata[key] = config.get_primitive("Preprocessing", key)
+                for key in ["vector_dim", "window", "pooling"]:
+                    file_metadata[key] = config.get_primitive("WordEmbedding", key)
                 if dicts_equal(file_metadata, metadata_filter):
                     vector_files.setdefault(entry.path, [])
                     vector_files[entry.path].append(file.path)
@@ -286,16 +302,15 @@ def find_cached_clear(base_dir: str, metadata_filter: dict) -> dict:
                 config = ValidConfig()
                 config.read(settings_path, encoding="cp1251")
                 file_metadata = {}
-                for key in ["normalization", "language"]:
-                    file_metadata[key] = config.get("Preprocessing", key)
-                file_metadata["remove_stopwords"] = config.get("Preprocessing", "remove_stopwords").lower() == "true"
-                if dicts_equal(file_metadata, metadata_filter, ignore_keys=["vector_dim", "pooling"]):
+                for key in ["normalization", "language", "remove_stopwords"]:
+                    file_metadata[key] = config.get_primitive("Preprocessing", key)
+                if dicts_equal(file_metadata, metadata_filter, ignore_keys=["vector_dim", "pooling", "window"]):
                     clear_files.setdefault(entry.path, [])
                     clear_files[entry.path].append(file.path)
     return clear_files
 
 
-def training_data_generator(vector_gen, rubricator: str) -> tuple:
+def labeled_data_generator(vector_gen, rubricator: str) -> tuple:
     """
     Генератор обучающих пар (X, y)
     Так как большая часть моделей не умеет работать с несколькими метками у одного текста,
@@ -319,33 +334,30 @@ def training_data_generator(vector_gen, rubricator: str) -> tuple:
         yield (x, y)
 
 
-def aggregate_training_dataset(training_x_y_generator) -> tuple:
+def aggregate_dataset(labeled_data_source) -> tuple:
     """
     Заглушка для неприятной особенности - sklearn не умеет
     учиться инкрементально. Придется собирать датасет в память.
-    :param training_x_y_generator: источник обучающих пар чанков
-    :return:
+    :param labeled_data_source: источник обучающих пар чанков
+    :return: пару x, y - полный набор векторов и меток
     """
     x = []
     y = []
-    for x_chunk, y_chunk in training_x_y_generator:
+    for x_chunk, y_chunk in labeled_data_source:
         x.extend(x_chunk)
         y.extend(y_chunk)
     return x, y
 
 
-# def create_vector_generator(base_dir: str, chunk_size: int,
-#                             pp_settings: dict, w2_settings: dict):
-#     """
-#     Создать источник векторов исходя из существования кэша
-#     :param base_dir: базовая директория для поиска кэша
-#     :param chunk_size: размер чанка
-#     :param pp_settings: словарь настроек препроцессора: columns, remove_stopwords, remove_formulas,
-#                                                         normalization, kw_delim, language, default_lang,
-#                                                         batch_size
-#     :param w2_settings: словарь настроек w2v:
-#     :return:
-#     """
+def tt_spit_one_file(labeled_data_source, test_percent: float) -> tuple:
+    x, y = aggregate_dataset(labeled_data_source)
+    return train_test_split(x, y, test_size=test_percent, shuffle=True)
+
+
+def tt_split_two_files(train_source, test_source) -> tuple:
+    x_train, y_train = aggregate_dataset(train_source)
+    x_test, y_test = aggregate_dataset(test_source)
+    return x_train, x_test, y_train, y_test
 
 
 if __name__ == '__main__':
