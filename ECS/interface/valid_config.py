@@ -32,6 +32,10 @@ class ValidConfig(ConfigParser):
         value = self.get(section, key)
         return parse_plain_sequence(value)
 
+    def get_primitive(self, section: str, option: str):
+        value = self.get(section, option)
+        return parse_primitive(value)
+
     def set(self, section, option, value=None):
         if isinstance(value, list):
             str_value = (self.LIST_DELIM + " ").join(value)
