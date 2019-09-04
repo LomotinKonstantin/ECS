@@ -1,7 +1,7 @@
 import warnings
-
 warnings.filterwarnings("ignore")
 from importlib import import_module
+from datetime import datetime
 
 from sklearn.multiclass import OneVsRestClassifier
 from sklearn.model_selection import StratifiedKFold, GridSearchCV
@@ -14,9 +14,6 @@ from sklearn.metrics import \
 from joblib import dump, load
 import pandas as pd
 import numpy as np
-
-
-from ECS.core.codes_helper import RubricManager
 
 
 def load_class(classpath: str) -> type:
@@ -128,6 +125,52 @@ def create_report(model, x_test: list, y_test: list):
         pred.append(list(all_prob.sort_values(ascending=False).index))
     return count_stats(predicts=pred, y_test=y_test,
                        amounts=[1, 2, 3, 4, 5, -1])
+
+
+def save_report(report: dict, path: str, rubricator: str) -> None:
+    writer = pd.ExcelWriter(path, engine='xlsxwriter')
+    names = list(map(str, report.keys()))
+    names.sort()
+    for i in names:
+        report[i].to_excel(writer, sheet_name=f"{rubricator}_{i}")
+    writer.save()
+
+
+def create_description(model_name: str, hyper_grid: dict,
+                       best_params: dict, train_file: str,
+                       test_file: str, train_size: int,
+                       test_size: int, training_secs: int,
+                       stats: dict):
+    now = datetime.today()
+    descr = f"Date of creation: {now.day}.{now.month}.{now.year}\n"
+    descr += f"Type of classifier:\t {model_name}\n"
+    descr += "Tested parameters:"
+    for param, value in hyper_grid.items():
+        descr += f"\n\t{param}: {value}"
+    descr += "\nBest parameters:"
+    for param, value in best_params.items():
+        descr += f"\n\t{param}: {value}"
+    descr += f"\nTrain and test data sizes and files:\n"
+    descr += f"\t{train_size}\t{train_file}\n"
+    descr += f"\t{test_size}\t{test_file}\n"
+    hours = training_secs // 3600
+    mins = (training_secs % 3600) // 60
+    secs = training_secs % 60
+    descr += f"Total training time:\t {hours}:{mins}:{secs}\n"
+    descr += "Results (accuracy, precision, recall, f1-score):\n"
+    keys = list(stats.keys())
+    keys.sort()
+    for i in keys:
+        mac = stats[i].loc['macro']
+        mic = stats[i].loc['micro']
+        macro_str = f"{mac['accuracy'].round(5)}\t{mac['precision'].round(5)}\t" \
+                    f"{mac['recall'].round(5)}\t{mac['f1-score'].round(5)}"
+        micro_str = f"{mic['accuracy'].round(5)}\t{mic['precision'].round(5)}\t" \
+                    f"{mic['recall'].round(5)}\t{mic['f1-score'].round(5)}"
+        descr += f"\t\tFor {i} answers: \n\tMacro {macro_str} \n\tMicro {micro_str}"
+
+    name = self.__create_name('clf_model', descr, version=version, description=description, info=1)
+    self.__save_file(name, descr)
 
 
 #################################################################
