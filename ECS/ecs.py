@@ -2,6 +2,7 @@ import warnings
 warnings.filterwarnings("ignore")
 from argparse import ArgumentParser
 import os
+from time import time
 
 from ECS.interface.valid_config import ValidConfig
 from ECS.preprocessor.Preprocessor2 import Preprocessor
@@ -18,13 +19,20 @@ from ECS.core.data_tools import \
     timestamp, \
     aggregate_full_dataset, \
     df_to_labeled_dataset, \
-    create_labeled_tt_split
+    create_labeled_tt_split, load_w2v
 from ECS.core.model_tools import \
     load_class, \
     run_grid_search, \
     refit_model, \
     create_report, \
-    save_report
+    save_excel_report, \
+    create_description, \
+    create_report_fname, \
+    save_txt_report, \
+    save_model, \
+    create_model_fname, \
+    short_report, \
+    seconds_to_duration
 
 
 def append_to_fname(fname: str, append: str) -> str:
@@ -84,6 +92,20 @@ def create_clear_generators(base_dir: str,
                             test_fpath: str,
                             experiment_title: str,
                             pp_params: dict) -> dict:
+    """
+    Создает подходящий генератор чистых текстов.
+    Если найден кэш, то создает читающий генератор,
+    если нет - предобрабатывает сырые данные
+    :param base_dir: базовая директория для поиска кэша
+    :param clear_filter: словарь с настройками препроцессора
+                         для поиска подходящего кэша
+    :param chunksize: размер чанка
+    :param training_fpath: путь к сырому обучающему файлу
+    :param test_fpath: путь к сырому тест-файлу (может быть равен '')
+    :param experiment_title: название эксперимента
+    :param pp_params: словарь с полными настройками препроцессора
+    :return: словарь вида {путь_к_источнику: генератор}
+    """
     pp_sources = {}
     cached_clear = find_cached_clear(base_dir=base_dir, metadata_filter=clear_filter)
     if len(cached_clear) > 0:
@@ -186,10 +208,14 @@ if __name__ == '__main__':
     pooling = config.get("WordEmbedding", "pooling")
     window = config.getint("WordEmbedding", "window")
     binary = config.get_primitive("Experiment", "binary")
-    rubricators = config.get_as_list("Experiment" ,"rubricator")
+    rubricators = config.get_as_list("Experiment", "rubricator")
     n_jobs = config.get("Experiment", "threads")
     n_folds = config.get("Experiment", "n_folds")
     test_percent = config.getint("TrainingData", "test_percent") / 100
+    # Объявляем путь к кэшу и модель W2V в общей области видимости,
+    # чтобы использовать потом
+    vector_cache_path = ""
+    w2v_model = None
     clear_metadata_filter = {
         "language": language,
         "remove_stopwords": remove_stopwords,
@@ -200,14 +226,15 @@ if __name__ == '__main__':
     }
     for key in ["vector_dim", "window", "pooling"]:
         vector_metadata_filter[key] = config.get_primitive("WordEmbedding", key)
-
-    # Начинаем создавать источники векторов согласно схеме
+    total_timer = time()
+    # Создаем источники векторов согласно схеме
     cached_vectors = find_cached_vectors(base_dir=dataset_folder, metadata_filter=vector_metadata_filter)
     # Словарь вида {путь_к_исходному_файлу: генератор}
     vector_gens = {}
     if (len(cached_vectors) > 0) and not w2v_exists:
         # Найдены подходящие векторы и их можно использовать
         vector_folder, file_list = cached_vectors.popitem()
+        print("Cached vectors found")
         for vec_file_path in file_list:
             if vec_file_path.endswith(".csv"):
                 # Поддержка старого текстового формата
@@ -232,17 +259,21 @@ if __name__ == '__main__':
         )
         if w2v_exists:
             # Используем ее
-            w2v_model = use_model
+            # И обновляем язык
+            print(f"Using Word2Vec model: {os.path.basename(use_model)}")
+            w2v_model, language = load_w2v(use_model)
+            config.set("Preprocessing", "language", language)
         else:
             # Создаем новую
             # Для совместимости преобразуем в список
+            print("Creating new Word2Vec model")
             w2v_model = create_w2v(pp_sources=list(pp_gens.values()),
                                    vector_dim=vector_dim,
                                    window_size=window)
             # Увы, генераторы - это одноразовые итераторы
             # Придется создать их заново
-            # Должны быть гарантированно читающие,
-            # а не кэширующие
+            # Должны гарантированно получиться
+            # читающие,а не кэширующие
             pp_gens = create_clear_generators(
                 base_dir=dataset_folder,
                 clear_filter=clear_metadata_filter,
@@ -252,337 +283,124 @@ if __name__ == '__main__':
                 experiment_title=exp_title,
                 pp_params=extract_pp_settings(config)
             )
-        # TODO: скопировать файл настроек в чистый кэш
-        # TODO: скопировать файл настроек и модель W2V в кэш векторов
         # Создаем кэширующие генераторы векторов
         # Функция принимает как путь к файлу модели W2V,
-        # так и саму модель
+        # так и саму модель.
         for source_path, pp_gen in pp_gens:
             fake_source_path = os.path.join(dataset_folder, os.path.basename(source_path))
-            cache_path = generate_vector_cache_path(raw_path=fake_source_path, exp_name=exp_title)
+            vector_cache_path = generate_vector_cache_path(raw_path=fake_source_path, exp_name=exp_title)
             vec_gen = caching_vector_generator(pp_source=pp_gen,
                                                w2v_file=w2v_model,
-                                               cache_path=cache_path,
+                                               cache_path=vector_cache_path,
                                                conv_type=pooling,
                                                pp_metadata=clear_metadata_filter)
             vector_gens[source_path] = vec_gen
 
-        # Время хорошенько загрузить память
-        # Собираем обучающие и тестировочные выборки
-        # У нас нет механизма сопоставления генераторов
-        # и сырых файлов, поэтому делаем допущения и проводим поиск
-        # TODO: Добавить механизм, который позволяет отслеживать источник данных
-        training_gen = gen_source_lookup(vector_gens, training_file)
-        training_df = aggregate_full_dataset(training_gen)
-        test_df = None
-        if test_file != "":
-            test_gen = gen_source_lookup(vector_gens, test_file)
-            test_df = aggregate_full_dataset(test_gen)
-
-        # Обучаем и тестируем модели
-        model_names = config.get_as_list("Classification", "models")
-        mapping_config = ValidConfig()
-        mapping_config.read(os.path.join(os.path.dirname(__file__), "interface", "map.ini"))
-        model_import_mapping = mapping_config.get_as_dict("SupportedModels")
-        # Для каждого рубрикатора создается свой датасет, т.к. каждый текст
-        # обладает разным количеством разных кодов
-        # и если размножить векторы сразу для всех рубрикаторов,
-        # память может быстро закончиться
-        for rubricator in rubricators:
-            if test_df is None:
-                x_train, x_test, y_train, y_test = create_labeled_tt_split(full_df=training_df,
-                                                                           test_percent=test_percent,
-                                                                           rubricator=rubricator)
-            else:
-                x_train, y_train = df_to_labeled_dataset(full_df=training_df, rubricator=rubricator)
-                x_test, y_test = df_to_labeled_dataset(full_df=test_df, rubricator=rubricator)
-            for model_name in model_names:
-                hypers = config.get_as_dict(model_name)
-                try:
-                    model_type = load_class(model_import_mapping[model_name])
-                except ImportError as ie:
-                    print(f"Не удалось импортировать модель {model_name}, модель будет пропущена "
-                          f"(Ошибка '{ie}')")
-                    continue
-                model_instance = model_type()
-                best_params = run_grid_search(model_instance=model_instance,
-                                              hyperparameters=hypers,
-                                              x_train=x_train,
-                                              y_train=y_train,
-                                              binary=binary,
-                                              n_folds=n_folds,
-                                              n_jobs=n_jobs)
-                best_model = refit_model(model_instance=model_type(),
-                                         best_params=best_params,
-                                         x_train=x_train, y_train=y_train, binary=binary)
-                report = create_report(model=best_model, x_test=x_test, y_test=y_test)
-                save_report()
-
-    # Создаем рабочего
-    worker = Worker()
-    worker.set_math(True)
-    # Загружаем индекс и датасет
-    dataset_folder = config.get("TrainingData", "dataset")
-    index = Index(dataset_folder)
-    # index.load()
-    index.build()
-    vec_list = index.vectors_list()
-    clr_list = index.cleared_texts_list()
-    actual_data_path = ""
-    data_type = "raw"
-    we_settings = config.get_as_dict("WordEmbedding")
-    vector_dim = we_settings["vector_dim"]
-    pooling = we_settings["pooling"]
-    use_model = config.get("WordEmbedding", "use_model", fallback="")
-    w2v_exists = exists(use_model)
-    # Сразу определяем язык
-    language = config.get("Preprocessing", "language")
-    if language == "auto":
-        # Для распознавания языка грузим 10 первых строк
-        file = next(walk(dataset_folder))[2][0]
-        language = recognize_language(join(dataset_folder, file),
-                                      encoding="cp1251", n_lines=10)
-    config.validate_normalization(language)
-    print("=" * 20, "Validation OK", "=" * 20)
-    print("Language:", language)
-    if len(vec_list) != 0 and not w2v_exists:
-        we_settings = config.get_as_dict("WordEmbedding")
-        pp_settings = config.get_as_dict("Preprocessing")
-        vec_found = None
-        clear_found = None
-        common_settings = {**we_settings, **pp_settings}
-        for entry in vec_list:
-            if dicts_equal(common_settings, entry, ignore_keys=["path", "ds_title"]):
-                actual_data_path = entry["path"]
-                data_type = "vectors"
-                break
-        # print(f"vec_found = {vec_found}")
-        # print(f"clear_found = {clear_found}")
-
-    if actual_data_path == "":
-        if len(clr_list) != 0:
-            pp_settings = config.get_as_dict("Preprocessing")
-            for entry in clr_list:
-                if dicts_equal(pp_settings, entry, ignore_keys=["path", "ds_title"]):
-                    actual_data_path = entry["path"]
-                    data_type = "clear"
-                    break
-    if actual_data_path == "":
-        actual_data_path = dataset_folder
-    # Список файлов в нужном каталоге датасета
-    dataset_files = next(walk(actual_data_path))[2]
-    # Удаляем файл конфига из списка
-    if "settings.ini" in dataset_files:
-        dataset_files.remove("settings.ini")
-    test_file = config.get("TrainingData", "test_file", fallback="")
-    #
+    # Время хорошенько загрузить память
+    # Собираем обучающие и тестировочные выборки
+    # У нас нет механизма сопоставления генераторов
+    # и сырых файлов, поэтому делаем допущения и проводим поиск
+    # TODO: Добавить механизм, который позволяет отслеживать источник данных
+    print("Creating dataset")
+    training_gen = gen_source_lookup(vector_gens, training_file)
+    training_df = aggregate_full_dataset(training_gen)
+    test_df = None
     if test_file != "":
-        test_lst = []
-        if data_type == "vectors":
-            test_lst = list(filter(lambda a: "test" in a
-                                             and "single_theme" not in a
-                                             and a[-4:] == ".csv", dataset_files))
-        else:
-            test_lst = list(filter(lambda a: a.startswith(test_file.split(".")[-2])
-                                             and a[-4:] == ".csv", dataset_files))
-        test_file = test_lst[0]
-        dataset_files.remove(test_file)
-        test_file = join(actual_data_path, test_file)
+        test_gen = gen_source_lookup(vector_gens, test_file)
+        test_df = aggregate_full_dataset(test_gen)
 
-    if data_type == "vectors":
-        train_lst = list(filter(lambda a: "test" not in a
-                                          and "single_theme" not in a
-                                          and a[-4:] == ".csv", dataset_files))
-        train_file = join(actual_data_path, train_lst[0])
-    else:
-        train_file = join(actual_data_path, dataset_files[0])
-    # Далее проходим весь пайплайн создания векторов
-    # (при необходимости)
-    title = config.get("Experiment", "experiment_title", fallback="")
-    if title.strip() == "":
-        title = datetime.today().strftime("%d-%b-%Y___%X")
-        title = title.replace(":", "-")
-    # if experiment_exists(title):
-    #     print("Эксперимент с таким названием уже существует")
-    #     exit(0)
-    if data_type == "raw":
-        # Предобработка
-        preprocessor = Preprocessor()
-        clear_folder = join(actual_data_path, title + "_clear")
-        if not exists(clear_folder):
-            mkdir(clear_folder)
-        clear_train_file = join(clear_folder,
-                                split(append_to_fname(train_file, "_clear"))[-1])
-        config_params = config.get_as_dict("Preprocessing")
-        columns = {}
-        for i in ["id", "title", "text", "keywords", "subj", "ipv", "rgnti", "correct"]:
-            columns[i] = config_params.pop(i)
-        pp_args = {"columns": columns,
-                   **config_params}
-        preprocessor.preprocess_file(train_file,
-                                     clear_train_file,
-                                     remove_formulas=False,
-                                     **pp_args)
-        clear_test_file = ""
-        if test_file != "":
-            clear_test_file = join(clear_folder,
-                                   split(append_to_fname(test_file, "_clear"))[-1])
-            preprocessor.preprocess_file(test_file,
-                                         clear_test_file,
-                                         remove_formulas=False,
-                                         **pp_args)
-        copyfile(settings_path,
-                 join(clear_folder, "settings.ini"))
-        # Если надо, создаем новую модель в2в
-        we_settings = config.get_as_dict("WordEmbedding")
-        vector_dim = we_settings["vector_dim"]
-        pooling = we_settings["pooling"]
-        data_loaded = False
-        if use_model == "" or not w2v_exists:
-            if not w2v_exists:
-                print("Model {} not found".format(use_model))
-            print("Creating Word2Vec model")
-            worker.set_lang(language)
-            worker.set_res_folder(exp_path)
-            if clear_test_file != "":
-                worker.load_data(clear_train_file, test_path=clear_test_file)
-            else:
-                train_percent = 1 - config.getint("TrainingData", "test_percent") / 100
-                worker.load_data(clear_train_file, split_ratio=train_percent)
-            data_loaded = True
-            worker.create_w2v_model(vector_dim)
+    # На этом этапе уже должны быть созданы папки кэша,
+    # так как мы гарантированно прогнали все генераторы
+    # Копируем файл настроек и W2V
+    # По недоразумению мы не храним путь к чистому кэшу,
+    # поэтому создаем заново. TODO: Исправить
+    clear_cache_folder = os.path.dirname(generate_clear_cache_path(training_file, exp_title))
+    vector_cache_folder = os.path.dirname(vector_cache_path)
+    with open(os.path.join(clear_cache_folder, "settings.ini")) as clear_copy_file:
+        config.write(clear_copy_file)
+    with open(os.path.join(vector_cache_path, "settings.ini")) as vector_copy_file:
+        config.write(vector_copy_file)
+    w2v_fname = generate_w2v_fname(vector_dim=w2v_model.vector_size, language=language)
+    w2v_cache_path = os.path.join(vector_cache_path, w2v_fname)
+    w2v_save_path = os.path.join(exp_path, w2v_fname)
+    w2v_model.save(w2v_cache_path)
+    w2v_model.save(w2v_save_path)
+
+    # Обучаем и тестируем модели
+    model_names = config.get_as_list("Classification", "models")
+    mapping_config = ValidConfig()
+    mapping_config.read(os.path.join(os.path.dirname(__file__), "interface", "map.ini"))
+    model_import_mapping = mapping_config.get_as_dict("SupportedModels")
+    # Для каждого рубрикатора создается свой датасет, т.к. каждый текст
+    # обладает разным количеством разных кодов
+    # и если размножить векторы сразу для всех рубрикаторов,
+    # память может быстро закончиться
+    for rubricator in rubricators:
+        if test_df is None:
+            x_train, x_test, y_train, y_test = create_labeled_tt_split(full_df=training_df,
+                                                                       test_percent=test_percent,
+                                                                       rubricator=rubricator)
         else:
-            # Ищем такую модель
-            # Для совместимости после упрощения
-            actual_w2v_path = use_model
-            # for file in next(walk(join(exp_path, use_model)))[2]:
-            #     if file.split(".")[-1] == "model":
-            #         actual_w2v_path = join(exp_path, "reports", use_model, file)
-            # if actual_data_path == "":
-            #     print("Что-то пошло не так. Эта надпись не должна была появиться")
-            #     exit(1)
-            worker.load_w2v(actual_w2v_path)
-        # Векторизируем
-        vector_folder = join(actual_data_path, title + "_vectors")
-        if not data_loaded:
-            if clear_test_file != "":
-                worker.load_data(clear_train_file, test_path=clear_test_file)
-            else:
-                train_percent = 1 - config.getint("TrainingData", "test_percent") / 100
-                worker.load_data(clear_train_file, split_ratio=train_percent)
-        worker.set_res_folder(vector_folder)
-        worker.data_cleaning()
-        worker.set_conv_type(pooling)
-        print("Creating vectors")
-        worker.create_w2v_vectors()
-        copyfile(settings_path,
-                 join(vector_folder, "settings.ini"))
-        if use_model == "" or not w2v_exists:
-            model_file = list(filter(lambda a: a.split(".")[-1] == "model",
-                                     next(walk(exp_path))[2]))[0]
-            copyfile(join(exp_path, model_file),
-                     join(vector_folder, split(model_file)[-1]))
-        else:
-            copyfile(use_model, join(vector_folder, split(use_model)[-1]))
-    elif data_type == "clear":
-        print("Cached preprocessed dataset found")
-        # use_model = config.get("WordEmbedding", "use_model", fallback="")
-        data_loaded = False
-        if use_model == "" or not w2v_exists:
-            print("Creating Word2Vec model")
-            worker.set_lang(language)
-            worker.set_res_folder(exp_path)
-            if test_file != "":
-                worker.load_data(train_file, test_path=test_file)
-            else:
-                train_percent = 1 - config.getint("TrainingData", "test_percent") / 100
-                worker.load_data(train_file, split_ratio=train_percent)
-            data_loaded = True
-            worker.create_w2v_model(vector_dim)
-        else:
-            # Ищем такую модель
-            actual_w2v_path = use_model
-            # for file in next(walk(join(exp_path, "reports", use_model)))[2]:
-            #     if file.split(".")[-1] == "model":
-            #         actual_w2v_path = join(exp_path, "reports", use_model, file)
-            # if actual_data_path == "":
-            #     print("Что-то пошло не так. Эта надпись не должна была появиться")
-            #     exit(1)
-            worker.load_w2v(actual_w2v_path)
-        # Векторизируем
-        vector_folder = join(dataset_folder, title + "_vectors")
-        if not data_loaded:
-            if test_file != "":
-                worker.load_data(train_file, test_path=test_file)
-            else:
-                train_percent = 1 - config.getint("TrainingData", "test_percent") / 100
-                worker.load_data(train_file, split_ratio=train_percent)
-        worker.set_res_folder(vector_folder)
-        worker.data_cleaning()
-        worker.set_conv_type(pooling)
-        print("Создание векторов")
-        worker.create_w2v_vectors()
-        copyfile(settings_path,
-                 join(vector_folder, "settings.ini"))
-        if use_model == "" or not w2v_exists:
-            model_file = list(filter(lambda a: a.split(".")[-1] == "model",
-                                     next(walk(exp_path))[2]))[0]
-            copyfile(join(exp_path, model_file),
-                     join(vector_folder, split(model_file)[-1]))
-        else:
-            copyfile(use_model, join(vector_folder, split(use_model)[-1]))
-    else:
-        print("Cached vectors found")
-        if test_file == "":
-            train_percent = 1 - config.getint("TrainingData", "test_percent") / 100
-            worker.load_data(train_file, split_ratio=train_percent)
-        else:
-            worker.load_data(train_file, test_path=test_file)
-        w2v_copy_src = ""
-        if use_model == "" or not w2v_exists:
-            if not w2v_exists:
-                print("Model {} not found".format(use_model))
-            for file in listdir(dirname(train_file)):
-                if file.endswith(".model"):
-                    w2v_copy_src = join(dirname(train_file), file)
-        else:
-            w2v_copy_src = use_model
-        if exists(w2v_copy_src):
-            copyfile(w2v_copy_src, join(exp_path, split(w2v_copy_src)[-1]))
-        else:
-            print("Error: specified model {} does not exist".format(w2v_copy_src))
-    # Учим классификатор
-    if not worker.set_res_folder(exp_path):
-        exit(0)
-    # if (use_model == "" or not w2v_exists) and data_type == "vectors":
-    #     model_file = list(filter(lambda a: a.split(".")[-1] == "model",
-    #                              next(walk(actual_data_path))[2]))[0]
-    #     copyfile(join(actual_data_path, model_file),
-    #              join(exp_path, split(model_file)[-1]))
-    worker.set_lang(language)
-    worker.set_conv_type(pooling)
-    binary = config.get_as_dict("Experiment")["binary"]
-    n_folds = config.getint("Experiment", "n_folds")
-    threads = config.getint("Experiment", "threads")
-    for rubr in config.get_as_list("Experiment", "rubricator"):
-        worker.set_rubr_id(rubr)
-        for model in config.get_as_list("Classification", "models"):
-            print("Fitting parameters for model {} by {}".format(model, rubr))
-            ModelType = config.get_model_type(model)
-            instance = ModelType()
-            hypers = config.get_hyperparameters(model)
-            #
-            if model == "svm":
-                hypers["probability"] = [True]
-            #
-            worker.data_train = worker.data_train.rename(columns=str)
+            x_train, y_train = df_to_labeled_dataset(full_df=training_df, rubricator=rubricator)
+            x_test, y_test = df_to_labeled_dataset(full_df=test_df, rubricator=rubricator)
+        for model_name in model_names:
+            hypers = config.get_as_dict(model_name)
             try:
-                worker.data_test = worker.data_test.rename(columns=str)
-            except Exception:
-                pass
-            worker.search_for_clf(model=instance,
-                                  parameters=hypers,
-                                  jobs=threads,
-                                  oneVsAll=binary,
-                                  skf_folds=n_folds,
-                                  description=model)
+                model_type = load_class(model_import_mapping[model_name])
+            except ImportError as ie:
+                print(f"Не удалось импортировать модель {model_name}, модель будет пропущена "
+                      f"(Ошибка '{ie}')")
+                continue
+            print(f"Fitting parameters for model {model_name} by {rubricator}")
+            model_instance = model_type()
+            timer = time()
+            best_params = run_grid_search(model_instance=model_instance,
+                                          hyperparameters=hypers,
+                                          x_train=x_train,
+                                          y_train=y_train,
+                                          binary=binary,
+                                          n_folds=n_folds,
+                                          n_jobs=n_jobs)
+            best_model = refit_model(model_instance=model_type(),
+                                     best_params=best_params,
+                                     x_train=x_train, y_train=y_train, binary=binary)
+            time_elapsed = int(time() - timer)
+
+            # Сохраняем модель
+            model_fname = create_model_fname(model_name=model_name, language=language,
+                                             rubricator=rubricator, pooling=pooling,
+                                             vector_dim=w2v_model.vector_size)
+            model_path = os.path.join(exp_path, model_fname)
+            # Пока эта информация не используется, но в будущем может пригодиться
+            model_metadata = {
+                **vector_metadata_filter,
+                **best_params
+            }
+            save_model(model=best_model, path=model_path, metadata=model_metadata)
+
+            # Создаем и сохраняем отчеты
+            excel_report = create_report(model=best_model, x_test=x_test, y_test=y_test)
+            text_report = create_description(model_name=model_name,
+                                             hyper_grid=hypers,
+                                             best_params=best_params,
+                                             train_file=training_file,
+                                             test_file=test_file,
+                                             train_size=len(x_train),
+                                             test_size=len(x_test),
+                                             stats=excel_report,
+                                             training_secs=time_elapsed)
+            report_fname = create_report_fname(model_name=model_name,
+                                               language=language,
+                                               rubricator=rubricator,
+                                               pooling=pooling,
+                                               vector_dim=w2v_model.vector_size)
+            excel_path = os.path.join(exp_path, f"{report_fname}.xlsx")
+            txt_path = os.path.join(exp_path, f"{report_fname}.txt")
+            save_excel_report(path=excel_path, report=excel_report, rubricator=rubricator)
+            save_txt_report(path=txt_path, report=text_report)
+            # Печатаем мини-отчет
+            mini_report = short_report(excel_report, time_elapsed)
+            print(mini_report)
+            # TODO: Сделать тесты
+    print("Done")
+    print(f"Total time elapsed: {seconds_to_duration(int(time() - total_timer))}")
