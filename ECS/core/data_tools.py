@@ -321,20 +321,17 @@ def labeled_data_generator(vector_gen, rubricator: str) -> tuple:
                               y - list-like коллекция строковых меток
     """
     for vec_chunk in vector_gen:
-        x = []
-        y = []
-        for row in vec_chunk.index:
-            codes = vec_chunk.loc[row, rubricator].split("\\")
-            for code in codes:
-                vec = vec_chunk.loc[row, "vectors"]
-                x.append(vec)
-                if rubricator == "rgnti":
-                    code = code[:5]
-                y.append(code)
-        yield (x, y)
+        yield df_to_labeled_dataset(vec_chunk, rubricator)
 
 
-def aggregate_dataset(labeled_data_source) -> tuple:
+def aggregate_full_dataset(vector_gen) -> pd.DataFrame:
+    full_df = pd.DataFrame(columns=["vectors", "subj", "ipv", "rgnti"])
+    for chunk in vector_gen:
+        full_df = pd.concat([full_df, chunk], ignore_index=True)
+    return full_df
+
+
+def aggregate_labeled_dataset(labeled_data_source) -> tuple:
     """
     Заглушка для неприятной особенности - sklearn не умеет
     учиться инкрементально. Придется собирать датасет в память.
@@ -349,15 +346,25 @@ def aggregate_dataset(labeled_data_source) -> tuple:
     return x, y
 
 
-def tt_spit_one_file(labeled_data_source, test_percent: float) -> tuple:
-    x, y = aggregate_dataset(labeled_data_source)
+def create_labeled_tt_split(full_df: pd.DataFrame,
+                            rubricator: str,
+                            test_percent: float) -> tuple:
+    x, y = df_to_labeled_dataset(full_df, rubricator)
     return train_test_split(x, y, test_size=test_percent, shuffle=True)
 
 
-def tt_split_two_files(train_source, test_source) -> tuple:
-    x_train, y_train = aggregate_dataset(train_source)
-    x_test, y_test = aggregate_dataset(test_source)
-    return x_train, x_test, y_train, y_test
+def df_to_labeled_dataset(full_df: pd.DataFrame, rubricator: str) -> tuple:
+    x = []
+    y = []
+    for row in full_df.index:
+        codes = full_df.loc[row, rubricator].split("\\")
+        for code in codes:
+            vec = full_df.loc[row, "vectors"]
+            x.append(vec)
+            if rubricator == "rgnti":
+                code = code[:5]
+            y.append(code)
+    return x, y
 
 
 if __name__ == '__main__':
