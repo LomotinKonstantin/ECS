@@ -1,5 +1,7 @@
+import warnings
+warnings.filterwarnings("ignore")
 from configparser import ConfigParser
-from os.path import join, exists, dirname
+from os.path import join, exists, dirname, isfile
 from os.path import split as os_split
 from os import linesep
 
@@ -28,9 +30,14 @@ class ValidConfig(ConfigParser):
         self.map_config.read(join(dirname(__file__), "map.ini"))
         self.optionxform = str
 
-    def get_as_list(self, section, key):
+    def get_as_list(self, section, key) -> list:
         value = self.get(section, key)
-        return parse_plain_sequence(value)
+        if is_plain_sequence(value):
+            return parse_plain_sequence(value)
+        elif is_nested_int_list(value):
+            return parse_nested_int_list(value)
+        else:
+            return [parse_primitive(value)]
 
     def get_primitive(self, section: str, option: str):
         value = self.get(section, option)
@@ -49,8 +56,8 @@ class ValidConfig(ConfigParser):
         dataset = self.get(ds_section, "dataset")
         val_assert(dataset != "",
                    'Please specify the training dataset folder name in the "dataset directory"')
-        val_assert("train" not in dataset and "test" not in dataset,
-                   "Keywords 'train' and 'test' are reserved and cannot be used")
+        val_assert(isfile(dataset),
+                   "Please specify the training file. Dataset directories are no longer supported")
         ds_path = dataset
         if not exists(ds_path):
             val_assert(not ("/" in ds_path or "\\" in ds_path),
@@ -296,8 +303,13 @@ class ValidConfig(ConfigParser):
         res = {}
         for i in self.options(section):
             str_val = self.get(section, i)
-            res[i] = parse_plain_sequence(str_val)
-            if len(res[i]) == 1:
+            if is_nested_int_list(str_val):
+                res[i] = parse_nested_int_list(str_val)
+            elif str_val == "":
+                res[i] = ""
+            else:
+                res[i] = parse_plain_sequence(str_val)
+            if len(res[i]) == 1 and type(res[i]) == list:
                 res[i] = res[i][0]
         return res
 

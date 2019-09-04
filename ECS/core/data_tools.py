@@ -1,3 +1,5 @@
+import warnings
+warnings.filterwarnings("ignore")
 import os
 import pickle
 
@@ -133,7 +135,7 @@ def load_w2v(w2v_path: str) -> tuple:
 
 
 def vector_from_csv_generator(vector_path: str, chunk_size: int):
-    for chunk in pd.read_csv(vector_path, index_col=0, sep="\t", chunksize=chunk_size):
+    for chunk in pd.read_csv(vector_path, index_col=0, sep="\t", chunksize=chunk_size, encoding="cp1251"):
         yield chunk
 
 

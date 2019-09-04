@@ -1,9 +1,10 @@
 import warnings
 warnings.filterwarnings("ignore")
+import sys
+sys.path.append("..")
 from argparse import ArgumentParser
 import os
 from time import time
-
 from ECS.interface.valid_config import ValidConfig
 from ECS.preprocessor.Preprocessor2 import Preprocessor
 from ECS.core.data_tools import \
@@ -35,9 +36,11 @@ from ECS.core.model_tools import \
     seconds_to_duration
 
 
-def append_to_fname(fname: str, append: str) -> str:
+def append_to_fname(fname: str, append: str, extension=None) -> str:
     components = fname.split(".")
     components[-2] += append
+    if extension is not None:
+        components[-1] = extension
     return ".".join(components)
 
 
@@ -52,7 +55,7 @@ def generate_clear_cache_path(raw_path: str, exp_name: str) -> str:
     cache_folder = os.path.join(os.path.dirname(raw_path), f"{exp_name}_clear")
     if not os.path.exists(cache_folder):
         os.mkdir(cache_folder)
-    cache_fname = append_to_fname(os.path.basename(raw_path), "_clear")
+    cache_fname = append_to_fname(os.path.basename(raw_path), "_clear", extension="csv")
     cache_fpath = os.path.join(cache_folder, cache_fname)
     return cache_fpath
 
@@ -68,7 +71,7 @@ def generate_vector_cache_path(raw_path: str, exp_name: str) -> str:
     cache_folder = os.path.join(os.path.dirname(raw_path), f"{exp_name}_vectors")
     if not os.path.exists(cache_folder):
         os.mkdir(cache_folder)
-    cache_fname = append_to_fname(os.path.basename(raw_path), "_vectors")
+    cache_fname = append_to_fname(os.path.basename(raw_path), "_vectors", extension="pkl")
     cache_fpath = os.path.join(cache_folder, cache_fname)
     return cache_fpath
 
@@ -164,10 +167,23 @@ def gen_source_lookup(vector_generators: dict, raw_path: str):
             res_gen = vector_generators[path]
             break
     if res_gen is None:
-        print(f"Произошла ошибка поиска обучающих данных для пути {raw_path}."
-              f"Индексированные источники: {vector_generators.keys()}")
+        linesep = "\n"
+        print(f"Generator lookup error for {raw_path}\n"
+              f"Indexed sources: {linesep.join(vector_generators.keys())}")
         exit(0)
     return res_gen
+
+
+def find_cached_w2v(cache_folder: str) -> str:
+    """
+    Найти модель w2v в папке с кэшированными векторами
+    :param cache_folder: папка с кэшированными векторами
+    :return: путь к w2v или пустая строка
+    """
+    for entry in os.listdir(cache_folder):
+        if entry.endswith(".model"):
+            return os.path.join(cache_folder, entry)
+    return ""
 
 
 if __name__ == '__main__':
@@ -209,8 +225,8 @@ if __name__ == '__main__':
     window = config.getint("WordEmbedding", "window")
     binary = config.get_primitive("Experiment", "binary")
     rubricators = config.get_as_list("Experiment", "rubricator")
-    n_jobs = config.get("Experiment", "threads")
-    n_folds = config.get("Experiment", "n_folds")
+    n_jobs = config.getint("Experiment", "threads")
+    n_folds = config.getint("Experiment", "n_folds")
     test_percent = config.getint("TrainingData", "test_percent") / 100
     # Объявляем путь к кэшу и модель W2V в общей области видимости,
     # чтобы использовать потом
@@ -231,10 +247,18 @@ if __name__ == '__main__':
     cached_vectors = find_cached_vectors(base_dir=dataset_folder, metadata_filter=vector_metadata_filter)
     # Словарь вида {путь_к_исходному_файлу: генератор}
     vector_gens = {}
-    if (len(cached_vectors) > 0) and not w2v_exists:
-        # Найдены подходящие векторы и их можно использовать
+    vector_folder = ""
+    file_list = []
+    cached_w2v_exists = False
+    if len(cached_vectors) > 0:
         vector_folder, file_list = cached_vectors.popitem()
+        cached_w2v_path = find_cached_w2v(vector_folder)
+        cached_w2v_exists = os.path.exists(cached_w2v_path)
+        w2v_model, language = load_w2v(cached_w2v_path)
+        config.set("Preprocessing", "language", language)
+    if cached_w2v_exists and not w2v_exists:
         print("Cached vectors found")
+        vector_cache_path = file_list[0]
         for vec_file_path in file_list:
             if vec_file_path.endswith(".csv"):
                 # Поддержка старого текстового формата
@@ -286,7 +310,7 @@ if __name__ == '__main__':
         # Создаем кэширующие генераторы векторов
         # Функция принимает как путь к файлу модели W2V,
         # так и саму модель.
-        for source_path, pp_gen in pp_gens:
+        for source_path, pp_gen in pp_gens.items():
             fake_source_path = os.path.join(dataset_folder, os.path.basename(source_path))
             vector_cache_path = generate_vector_cache_path(raw_path=fake_source_path, exp_name=exp_title)
             vec_gen = caching_vector_generator(pp_source=pp_gen,
@@ -295,7 +319,6 @@ if __name__ == '__main__':
                                                conv_type=pooling,
                                                pp_metadata=clear_metadata_filter)
             vector_gens[source_path] = vec_gen
-
     # Время хорошенько загрузить память
     # Собираем обучающие и тестировочные выборки
     # У нас нет механизма сопоставления генераторов
@@ -316,12 +339,12 @@ if __name__ == '__main__':
     # поэтому создаем заново. TODO: Исправить
     clear_cache_folder = os.path.dirname(generate_clear_cache_path(training_file, exp_title))
     vector_cache_folder = os.path.dirname(vector_cache_path)
-    with open(os.path.join(clear_cache_folder, "settings.ini")) as clear_copy_file:
+    with open(os.path.join(clear_cache_folder, "settings.ini"), "w") as clear_copy_file:
         config.write(clear_copy_file)
-    with open(os.path.join(vector_cache_path, "settings.ini")) as vector_copy_file:
+    with open(os.path.join(vector_cache_folder, "settings.ini"), "w") as vector_copy_file:
         config.write(vector_copy_file)
     w2v_fname = generate_w2v_fname(vector_dim=w2v_model.vector_size, language=language)
-    w2v_cache_path = os.path.join(vector_cache_path, w2v_fname)
+    w2v_cache_path = os.path.join(vector_cache_folder, w2v_fname)
     w2v_save_path = os.path.join(exp_path, w2v_fname)
     w2v_model.save(w2v_cache_path)
     w2v_model.save(w2v_save_path)
@@ -344,7 +367,9 @@ if __name__ == '__main__':
             x_train, y_train = df_to_labeled_dataset(full_df=training_df, rubricator=rubricator)
             x_test, y_test = df_to_labeled_dataset(full_df=test_df, rubricator=rubricator)
         for model_name in model_names:
-            hypers = config.get_as_dict(model_name)
+            hypers = config.get_hyperparameters(model_name)
+            if model_name == "svm":
+                hypers["probability"] = [True]
             try:
                 model_type = load_class(model_import_mapping[model_name])
             except ImportError as ie:
