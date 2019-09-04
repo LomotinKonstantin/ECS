@@ -201,6 +201,7 @@ if __name__ == '__main__':
     config.read(settings_path, encoding="cp1251")
     print("Validating experiment settings...")
     config.validate_all()
+    print("=" * 20, "Validation OK", "=" * 20)
     # Находим датасет
     training_file = config.get("TrainingData", "dataset")
     test_file = config.get("TrainingData", "test_file")
