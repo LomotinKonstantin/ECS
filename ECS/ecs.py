@@ -325,7 +325,7 @@ if __name__ == '__main__':
     # У нас нет механизма сопоставления генераторов
     # и сырых файлов, поэтому делаем допущения и проводим поиск
     # TODO: Добавить механизм, который позволяет отслеживать источник данных
-    print("Creating dataset")
+    print("Collecting dataset in memory")
     training_gen = gen_source_lookup(vector_gens, training_file)
     training_df = aggregate_full_dataset(training_gen)
     test_df = None
