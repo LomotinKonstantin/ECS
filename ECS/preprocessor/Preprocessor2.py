@@ -17,6 +17,12 @@ def expand_language(lang: str):
     return lang
 
 
+def flatten_list(nested_list: list) -> list:
+    if isinstance(nested_list[0], list):
+        return [val for sublist in nested_list for val in sublist]
+    return nested_list
+
+
 class Normalizer:
 
     def __init__(self, preproc: str, language: str):
@@ -45,9 +51,9 @@ class Normalizer:
         else:
             alg = self.class_type()
             if hasattr(alg, 'stem'):
-                token_list = [alg.stem(word) for word in text.split()]
+                token_list = flatten_list([alg.stem(word) for word in text.split()])
             elif hasattr(alg, 'lemmatize'):
-                token_list = [alg.lemmatize(word) for word in text.split()]
+                token_list = flatten_list([alg.lemmatize(word) for word in text.split()])
             else:
                 raise ValueError(f"Algorithm {alg} has unknown API")
         # Выбор формата результата
@@ -84,7 +90,10 @@ class TimeTracer:
 
 
 def remove_empty_items(lst: list):
-    return list(filter(lambda x: len(x.strip()) > 0, lst))
+    try:
+        return list(filter(lambda x: len(x.strip()) > 0, lst))
+    except AttributeError:
+        print(lst)
 
 
 class Preprocessor:
