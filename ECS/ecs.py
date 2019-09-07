@@ -90,7 +90,7 @@ def extract_pp_settings(v_config: ValidConfig) -> dict:
 
 def create_clear_generators(base_dir: str,
                             clear_filter: dict,
-                            chunksize: int,
+                            chunk_size: int,
                             training_fpath: str,
                             test_fpath: str,
                             experiment_title: str,
@@ -102,7 +102,7 @@ def create_clear_generators(base_dir: str,
     :param base_dir: базовая директория для поиска кэша
     :param clear_filter: словарь с настройками препроцессора
                          для поиска подходящего кэша
-    :param chunksize: размер чанка
+    :param chunk_size: размер чанка
     :param training_fpath: путь к сырому обучающему файлу
     :param test_fpath: путь к сырому тест-файлу (может быть равен '')
     :param experiment_title: название эксперимента
@@ -116,7 +116,7 @@ def create_clear_generators(base_dir: str,
         # берем случайную
         _, clear_file_list = cached_clear.popitem()
         for file_path in clear_file_list:
-            gen = pp_from_csv_generator(file_path, chunksize)
+            gen = pp_from_csv_generator(file_path, chunk_size)
             pp_sources[file_path] = gen
     else:
         # Чистых текстов нет
@@ -186,7 +186,7 @@ def find_cached_w2v(cache_folder: str) -> str:
     return ""
 
 
-if __name__ == '__main__':
+def main():
     # Получаем аргументы командной строки
     argparser = ArgumentParser()
     add_args(argparser)
@@ -248,7 +248,6 @@ if __name__ == '__main__':
     cached_vectors = find_cached_vectors(base_dir=dataset_folder, metadata_filter=vector_metadata_filter)
     # Словарь вида {путь_к_исходному_файлу: генератор}
     vector_gens = {}
-    vector_folder = ""
     file_list = []
     cached_w2v_exists = False
     if len(cached_vectors) > 0:
@@ -276,7 +275,7 @@ if __name__ == '__main__':
         pp_gens = create_clear_generators(
             base_dir=dataset_folder,
             clear_filter=clear_metadata_filter,
-            chunksize=chunk_size,
+            chunk_size=chunk_size,
             training_fpath=training_file,
             test_fpath=test_file,
             experiment_title=exp_title,
@@ -302,7 +301,7 @@ if __name__ == '__main__':
             pp_gens = create_clear_generators(
                 base_dir=dataset_folder,
                 clear_filter=clear_metadata_filter,
-                chunksize=chunk_size,
+                chunk_size=chunk_size,
                 training_fpath=training_file,
                 test_fpath=test_file,
                 experiment_title=exp_title,
@@ -429,3 +428,7 @@ if __name__ == '__main__':
             print(mini_report)
     print("Done")
     print(f"Total time elapsed: {seconds_to_duration(int(time() - total_timer))}")
+
+
+if __name__ == '__main__':
+    main()
