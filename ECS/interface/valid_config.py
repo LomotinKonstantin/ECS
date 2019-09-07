@@ -87,8 +87,6 @@ class ValidConfig(ConfigParser):
             val_assert(exists(test_path),
                        "Specified test file does not exist!",
                        leave=test_file != "")
-            val_assert("train" not in test_file and "test" not in test_file,
-                       "Keywords 'train' and 'test' are reserved and cannot be used")
         if tp_option_exists:
             if test_file == "":
                 try:
