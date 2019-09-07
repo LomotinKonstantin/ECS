@@ -427,6 +427,5 @@ if __name__ == '__main__':
             # Печатаем мини-отчет
             mini_report = short_report(excel_report, time_elapsed)
             print(mini_report)
-            # TODO: Сделать тесты
     print("Done")
     print(f"Total time elapsed: {seconds_to_duration(int(time() - total_timer))}")
