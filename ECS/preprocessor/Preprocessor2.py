@@ -288,8 +288,12 @@ class Preprocessor:
         # print(self.delim in res, type(res))
         if normalization != "no":
             # print("Normalization...")
-            res = Normalizer(normalization, lang).normalize(res)
-            res = re.sub(" ".join(self.delim).strip(), self.delim, res)
+            try:
+                res = Normalizer(normalization, lang).normalize(res)
+                res = re.sub(" ".join(self.delim).strip(), self.delim, res)
+            except ValueError as ve:
+                print(f"Unsupported settings combination: {ve}\nPlease check the documentation")
+                exit()
             # print(self.delim in res, type(res))
             # with open("log.txt", "w", encoding="utf-8") as f:
             #     f.write(res)

@@ -7,6 +7,7 @@ from os import linesep
 
 from ECS.interface.validation_tools import *
 from ECS.core.model_tools import load_class
+from ECS.preprocessor.Preprocessor2 import Normalizer
 
 
 class ValidConfig(ConfigParser):
@@ -190,6 +191,15 @@ class ValidConfig(ConfigParser):
         #
         lang_options = parse_plain_sequence(self.map_config.get("Supported", "languages"))
         self.__check_value(section, "language", lang_options)
+        #
+        lang = self.get(section, "language")
+        norm = self.get(section, "normalization")
+        if lang != "auto":
+            try:
+                Normalizer(norm, lang)
+            except ValueError as ve:
+                print(f"Unsupported settings combination: {ve}\nPlease check the documentation")
+                exit()
         #
         val_assert(is_int(batch_size) and int(batch_size) > 0,
                    "Invalid value of 'batch_size:'\n"
