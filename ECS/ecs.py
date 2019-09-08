@@ -1,6 +1,8 @@
 import warnings
+
 warnings.filterwarnings("ignore")
 import sys
+
 sys.path.append("..")
 from argparse import ArgumentParser
 import os
@@ -88,9 +90,17 @@ def extract_pp_settings(v_config: ValidConfig) -> dict:
     return pp_params
 
 
+def create_caching_pp_gen(raw_path: str, exp_name: str, chunk_size: int, pp_params: dict):
+    cache_file = generate_clear_cache_path(raw_path=raw_path, exp_name=exp_name)
+    return caching_pp_generator(raw_file=raw_path,
+                                chunk_size=chunk_size,
+                                cache_path=cache_file,
+                                **pp_params)
+
+
 def create_clear_generators(base_dir: str,
                             clear_filter: dict,
-                            chunksize: int,
+                            chunk_size: int,
                             training_fpath: str,
                             test_fpath: str,
                             experiment_title: str,
@@ -102,36 +112,47 @@ def create_clear_generators(base_dir: str,
     :param base_dir: базовая директория для поиска кэша
     :param clear_filter: словарь с настройками препроцессора
                          для поиска подходящего кэша
-    :param chunksize: размер чанка
+    :param chunk_size: размер чанка
     :param training_fpath: путь к сырому обучающему файлу
     :param test_fpath: путь к сырому тест-файлу (может быть равен '')
     :param experiment_title: название эксперимента
     :param pp_params: словарь с полными настройками препроцессора
-    :return: словарь вида {путь_к_источнику: генератор}
+    :return: словарь вида {'train': генератор, ['test': генератор]}
     """
     pp_sources = {}
     cached_clear = find_cached_clear(base_dir=base_dir, metadata_filter=clear_filter)
+    clear_file_list = []
+    # Если мы нашли кэш, список станет непустым
+    # А если нет, то мы не зайдем в условие
     if len(cached_clear) > 0:
         # Если нашли больше, чем одну папку с чистыми текстами,
         # берем случайную
         _, clear_file_list = cached_clear.popitem()
-        for file_path in clear_file_list:
-            gen = pp_from_csv_generator(file_path, chunksize)
-            pp_sources[file_path] = gen
+    # Если список был пустым, то find_cache_for source
+    # вернет пустую строку и будет создан кэширующий генератор
+    train_pp_cache = find_cache_for_source(clear_file_list, training_fpath)
+    if train_pp_cache:
+        pp_sources[train_pp_cache] = pp_from_csv_generator(train_pp_cache, chunk_size)
     else:
-        # Чистых текстов нет
-        training_cache_file = generate_clear_cache_path(training_fpath, exp_name=experiment_title)
-        pp_sources[training_fpath] = caching_pp_generator(raw_file=training_fpath,
-                                                          chunk_size=chunk_size,
-                                                          cache_path=training_cache_file,
-                                                          **pp_params)
-        if test_fpath != "":
-            test_cache_file = generate_clear_cache_path(test_fpath, exp_name=experiment_title)
-            pp_sources[test_fpath] = caching_pp_generator(raw_file=test_fpath,
-                                                          chunk_size=chunk_size,
-                                                          cache_path=test_cache_file,
-                                                          **pp_params)
-    return pp_sources
+        pp_sources[training_fpath] = create_caching_pp_gen(raw_path=training_fpath,
+                                                           exp_name=experiment_title,
+                                                           chunk_size=chunk_size,
+                                                           pp_params=pp_params)
+    # Тут возможно 2 ситуации:
+    # 1. Тестового файла не предусмотрено (ничего не делать)
+    # 2. Тестовый кэш не найден (создать кэширующий генератор)
+    if test_fpath:
+        test_pp_cache = find_cache_for_source(clear_file_list, test_fpath)
+        if test_pp_cache:
+            pp_sources[test_pp_cache] = pp_from_csv_generator(test_pp_cache, chunk_size)
+        else:
+            pp_sources[test_fpath] = create_caching_pp_gen(raw_path=test_fpath,
+                                                           exp_name=experiment_title,
+                                                           chunk_size=chunk_size,
+                                                           pp_params=pp_params)
+    return train_test_match(pp_sources,
+                            train_raw_path=training_fpath,
+                            test_raw_path=test_fpath)
 
 
 def recognize_language(filename: str, encoding="utf8", n_lines=10) -> str:
@@ -152,28 +173,6 @@ def add_args(parser: ArgumentParser):
                         help="Full path to the folder with settings.ini file", )
 
 
-def gen_source_lookup(vector_generators: dict, raw_path: str):
-    """
-    Найти генератор, который соответствует указанному сырому файлу.
-    Может завершить исполнение с сообщением об ошибке
-    :param vector_generators: словарь {source_path: generator}
-    :param raw_path: путь к сырому файлу
-    :return: объект генератора
-    """
-    res_gen = None
-    search_pattern = os.path.basename(raw_path).split(".")[0]
-    for path in vector_generators:
-        if search_pattern in os.path.basename(path):
-            res_gen = vector_generators[path]
-            break
-    if res_gen is None:
-        linesep = "\n"
-        print(f"Generator lookup error for {raw_path}\n"
-              f"Indexed sources: {linesep.join(vector_generators.keys())}")
-        exit(0)
-    return res_gen
-
-
 def find_cached_w2v(cache_folder: str) -> str:
     """
     Найти модель w2v в папке с кэшированными векторами
@@ -186,7 +185,65 @@ def find_cached_w2v(cache_folder: str) -> str:
     return ""
 
 
-if __name__ == '__main__':
+def path_to_search_pattern(path: str) -> str:
+    basename = os.path.basename(path)
+    if "." in basename:
+        search_pattern = os.path.basename(path).split(".")[0]
+    else:
+        search_pattern = basename
+    return search_pattern
+
+
+def match_raw_and_gen(raw_path: str, cache_dict: dict):
+    search_pattern = path_to_search_pattern(raw_path)
+    for source_path, gen in cache_dict.items():
+        if search_pattern in os.path.basename(source_path):
+            return gen
+    return None
+
+
+def train_test_match(cache_dict: dict, train_raw_path: str, test_raw_path: str) -> dict:
+    """
+    Найти тестовые и обучающие генераторы (или пути) в кэше
+    :param cache_dict: словарь вида {source_path: generator}
+    :param train_raw_path: путь к исходному обучающему файлу
+    :param test_raw_path: путь к исходному тестовому файлу
+    :return: словарь вида {'train': generator/path, ['test': generator/path]}
+             поля 'test' может не быть, еслт test_raw_path - пустая строка
+             В теории результат может быть пустым словарем
+    """
+    res = {}
+    train_gen = match_raw_and_gen(train_raw_path, cache_dict)
+    if train_gen is not None:
+        res["train"] = train_gen
+    if test_raw_path:
+        test_gen = match_raw_and_gen(test_raw_path, cache_dict)
+        if test_gen is not None:
+            res["test"] = test_gen
+    return res
+
+
+def find_cache_for_source(cache_list: list, raw_path: str) -> str:
+    if raw_path == "":
+        return ""
+    search_pattern = path_to_search_pattern(raw_path)
+    for cache_path in cache_list:
+        if search_pattern in os.path.basename(cache_path):
+            return cache_path
+    return ""
+
+
+def create_reading_vector_gen(path: str, chunk_size: int):
+    if path.endswith(".csv"):
+        # Поддержка старого текстового формата
+        vec_gen = vector_from_csv_generator(path, chunk_size=chunk_size)
+    else:
+        # Новый бинарный формат (pickle)
+        vec_gen = vector_from_pkl_generator(path, chunk_size=chunk_size)
+    return vec_gen
+
+
+def main():
     # Получаем аргументы командной строки
     argparser = ArgumentParser()
     add_args(argparser)
@@ -196,22 +253,28 @@ if __name__ == '__main__':
     if not os.path.exists(settings_path):
         print("No settings.ini file found in ", exp_path)
         exit(0)
+
     # Загружаем и проверяем конфиг
     config = ValidConfig()
     config.read(settings_path, encoding="cp1251")
     print("Validating experiment settings...")
     config.validate_all()
     print("=" * 20, "Validation OK", "=" * 20)
+
     # Находим датасет
     training_file = config.get("TrainingData", "dataset")
     test_file = config.get("TrainingData", "test_file")
     dataset_folder = os.path.dirname(training_file)
+
     # Определяем язык
     language = config.get("Preprocessing", "language")
     if language == "auto":
         # Для распознавания языка грузим 10 первых строк
         language = recognize_language(training_file, encoding="cp1251", n_lines=10)
+        # Потом мы будем копировать файл настроек в кэш
+        # Поэтому поддерживаем его актуальным
         config.set("Preprocessing", "language", language)
+
     # Получаем параметры
     exp_title = config.get_primitive("Experiment", "experiment_title")
     if exp_title == "":
@@ -229,10 +292,7 @@ if __name__ == '__main__':
     n_jobs = config.getint("Experiment", "threads")
     n_folds = config.getint("Experiment", "n_folds")
     test_percent = config.getint("TrainingData", "test_percent") / 100
-    # Объявляем путь к кэшу и модель W2V в общей области видимости,
-    # чтобы использовать потом
-    vector_cache_path = ""
-    w2v_model = None
+    # Готовим фильтры настроек для поиска кэша
     clear_metadata_filter = {
         "language": language,
         "remove_stopwords": remove_stopwords,
@@ -243,40 +303,41 @@ if __name__ == '__main__':
     }
     for key in ["vector_dim", "window", "pooling"]:
         vector_metadata_filter[key] = config.get_primitive("WordEmbedding", key)
-    total_timer = time()
     # Создаем источники векторов согласно схеме
-    cached_vectors = find_cached_vectors(base_dir=dataset_folder, metadata_filter=vector_metadata_filter)
-    # Словарь вида {путь_к_исходному_файлу: генератор}
+    total_timer = time()
+    cached_vectors = find_cached_vectors(base_dir=dataset_folder,
+                                         metadata_filter=vector_metadata_filter)
+    train_test_vec_exist = False
+    cached_w2v_path = ""
+    vector_cache_path = ""
+    train_vec_cache = ""
+    test_vec_cache = ""
     vector_gens = {}
-    vector_folder = ""
-    file_list = []
-    cached_w2v_exists = False
+    # Проводим разведку
     if len(cached_vectors) > 0:
-        vector_folder, file_list = cached_vectors.popitem()
-        cached_w2v_path = find_cached_w2v(vector_folder)
-        cached_w2v_exists = os.path.exists(cached_w2v_path)
+        vector_cache_folder, vector_cache_files = cached_vectors.popitem()
+        train_vec_cache = find_cache_for_source(vector_cache_files, training_file)
+        test_vec_cache = None
+        if test_file != "":
+            test_vec_cache = find_cache_for_source(vector_cache_files, test_file)
+        train_test_vec_exist = train_vec_cache and test_vec_cache
+        cached_w2v_path = find_cached_w2v(vector_cache_folder)
+    if train_test_vec_exist and cached_w2v_path and use_model != "":
+        print("Cached vectors found")
         w2v_model, language = load_w2v(cached_w2v_path)
         config.set("Preprocessing", "language", language)
-    if cached_w2v_exists and not w2v_exists:
-        print("Cached vectors found")
-        vector_cache_path = file_list[0]
-        for vec_file_path in file_list:
-            if vec_file_path.endswith(".csv"):
-                # Поддержка старого текстового формата
-                vec_gen = vector_from_csv_generator(vec_file_path, chunk_size=chunk_size)
-            else:
-                # Новый бинарный формат (pickle)
-                vec_gen = vector_from_pkl_generator(vec_file_path, chunk_size=chunk_size)
-            vector_gens[vec_file_path] = vec_gen
+        vector_gens["train"] = create_reading_vector_gen(train_vec_cache, chunk_size)
+        vector_gens["train"] = create_reading_vector_gen(test_vec_cache, chunk_size)
     else:
-        # Либо нет готовых векторов,
+        # Либо нет готовых обучающих векторов,
+        # либо в кэше нет модели W2V,
         # либо нужно создать их заново при помощи указанной модели
         # Получаем источники чистых текстов
-        # Словарь вида {путь_к_исходному_файлу: генератор}
+        # Словарь вида {'train': генератор, ['test': генератор]}
         pp_gens = create_clear_generators(
             base_dir=dataset_folder,
             clear_filter=clear_metadata_filter,
-            chunksize=chunk_size,
+            chunk_size=chunk_size,
             training_fpath=training_file,
             test_fpath=test_file,
             experiment_title=exp_title,
@@ -302,42 +363,42 @@ if __name__ == '__main__':
             pp_gens = create_clear_generators(
                 base_dir=dataset_folder,
                 clear_filter=clear_metadata_filter,
-                chunksize=chunk_size,
+                chunk_size=chunk_size,
                 training_fpath=training_file,
                 test_fpath=test_file,
                 experiment_title=exp_title,
                 pp_params=extract_pp_settings(config)
             )
-        # Создаем кэширующие генераторы векторов
-        # Функция принимает как путь к файлу модели W2V,
-        # так и саму модель.
-        for source_path, pp_gen in pp_gens.items():
-            fake_source_path = os.path.join(dataset_folder, os.path.basename(source_path))
-            vector_cache_path = generate_vector_cache_path(raw_path=fake_source_path, exp_name=exp_title)
-            vec_gen = caching_vector_generator(pp_source=pp_gen,
-                                               w2v_file=w2v_model,
-                                               cache_path=vector_cache_path,
-                                               conv_type=pooling,
-                                               pp_metadata=clear_metadata_filter)
-            vector_gens[source_path] = vec_gen
+        vector_cache_path = generate_vector_cache_path(raw_path=training_file, exp_name=exp_title)
+        train_vec_gen = caching_vector_generator(pp_source=pp_gens["train"],
+                                                 w2v_file=w2v_model,
+                                                 cache_path=vector_cache_path,
+                                                 conv_type=pooling,
+                                                 pp_metadata=clear_metadata_filter)
+        vector_gens["train"] = train_vec_gen
+        if test_file:
+            vector_cache_path = generate_vector_cache_path(raw_path=test_file, exp_name=exp_title)
+            test_vec_gen = caching_vector_generator(pp_source=pp_gens["test"],
+                                                    w2v_file=w2v_model,
+                                                    cache_path=vector_cache_path,
+                                                    conv_type=pooling,
+                                                    pp_metadata=clear_metadata_filter)
+            vector_gens["test"] = test_vec_gen
     # Время хорошенько загрузить память
     # Собираем обучающие и тестировочные выборки
-    # У нас нет механизма сопоставления генераторов
-    # и сырых файлов, поэтому делаем допущения и проводим поиск
-    # TODO: Добавить механизм, который позволяет отслеживать источник данных
-    print("Collecting dataset in memory")
-    training_gen = gen_source_lookup(vector_gens, training_file)
+    print("Creating dataset")
+    training_gen = vector_gens["train"]
     training_df = aggregate_full_dataset(training_gen)
     test_df = None
     if test_file != "":
-        test_gen = gen_source_lookup(vector_gens, test_file)
+        test_gen = vector_gens["test"]
         test_df = aggregate_full_dataset(test_gen)
 
     # На этом этапе уже должны быть созданы папки кэша,
     # так как мы гарантированно прогнали все генераторы
     # Копируем файл настроек и W2V
     # По недоразумению мы не храним путь к чистому кэшу,
-    # поэтому создаем заново. TODO: Исправить
+    # поэтому создаем его заново. TODO: Исправить
     clear_cache_folder = os.path.dirname(generate_clear_cache_path(training_file, exp_title))
     vector_cache_folder = os.path.dirname(vector_cache_path)
     with open(os.path.join(clear_cache_folder, "settings.ini"), "w") as clear_copy_file:
@@ -429,3 +490,7 @@ if __name__ == '__main__':
             print(mini_report)
     print("Done")
     print(f"Total time elapsed: {seconds_to_duration(int(time() - total_timer))}")
+
+
+if __name__ == '__main__':
+    main()
