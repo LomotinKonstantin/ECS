@@ -53,7 +53,10 @@ class Normalizer:
             if hasattr(alg, 'stem'):
                 token_list = flatten_list([alg.stem(word) for word in text.split()])
             elif hasattr(alg, 'lemmatize'):
-                token_list = flatten_list([alg.lemmatize(word) for word in text.split()])
+                if self.preproc == "pymystem":
+                    token_list = " ".join(alg.lemmatize(text))
+                else:
+                    token_list = flatten_list([alg.lemmatize(word) for word in text.split()])
             else:
                 raise ValueError(f"Algorithm {alg} has unknown API")
         # Выбор формата результата
