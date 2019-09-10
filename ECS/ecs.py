@@ -259,7 +259,7 @@ def main():
     config.read(settings_path, encoding="cp1251")
     print("Validating experiment settings...")
     config.validate_all()
-    print("=" * 20, "Validation OK", "=" * 20)
+    print("=" * 20, "Validation OK", "=" * 20, "\n")
 
     # Находим датасет
     training_file = config.get("TrainingData", "dataset")
