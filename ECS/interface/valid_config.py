@@ -56,10 +56,10 @@ class ValidConfig(ConfigParser):
         self.__check_existence(ds_section, "dataset")
         dataset = self.get(ds_section, "dataset")
         val_assert(dataset != "",
-                   f'Please specify full path to the training file (section "[{ds_section}]", option "dataset")')
+                   f'Please specify full path to the training file (section "{ds_section}", option "dataset")')
         val_assert(isfile(dataset),
                    f'Please specify the training file. Dataset directories are no longer supported '
-                   f'(section "[{ds_section}]", option "dataset")')
+                   f'(section "{ds_section}", option "dataset")')
         ds_path = dataset
         val_assert(exists(ds_path),
                    "Dataset '{}' does not exist!".format(ds_path))
@@ -85,11 +85,11 @@ class ValidConfig(ConfigParser):
             test_percent = ""
         val_assert(test_percent != "" or test_file != "",
                    'Please specify either "test_percent" or "test_file" option')
-        test_path = join(ds_path, test_file)
-        if tf_option_exists:
+        test_path = test_file
+        if tf_option_exists and test_file != "":
             val_assert(exists(test_path),
-                       "Specified test file does not exist!",
-                       leave=test_file != "")
+                       f"Test file '{test_path}' does not exist!",
+                       leave=True)
         if tp_option_exists:
             if test_file == "":
                 try:
@@ -111,15 +111,20 @@ class ValidConfig(ConfigParser):
         restricted = ("\\", "*", '"', "?", "/", ":", ">", "<", "|")
         if title != "":
             val_assert(not any(s in title for s in restricted),
-                       "Experiment title cannot contain symbols {}".format(", ".join(restricted)))
+                       "Experiment title cannot contain symbols {}".format(" ".join(restricted)))
             val_assert("train" not in title and "test" not in title,
                        "Keywords 'train' and 'test' are reserved and cannot be used")
         # binary
         self.__check_existence("Experiment", "binary")
-        self.__check_value("Experiment", "binary", [True, False])
+        val_assert(self.get("Experiment", "binary") != "",
+                   "Please specify 'binary' option (section 'Experiment')")
+        self.__check_value("Experiment", "binary", [True, False],
+                           multiple_values=False)
         # n_folds
         self.__check_option_entry("Experiment", "n_folds")
         n_folds = self.get("Experiment", "n_folds")
+        val_assert(n_folds != "",
+                   "Missing value of 'n_folds' option")
         try:
             a = int(n_folds)
             val_assert(a > 0,
@@ -130,6 +135,8 @@ class ValidConfig(ConfigParser):
         # threads
         self.__check_option_entry("Experiment", "threads")
         threads = self.get("Experiment", "threads")
+        val_assert(threads != "",
+                   "Missing value of 'threads' option")
         try:
             a = int(threads)
             val_assert(a > 0,
@@ -143,6 +150,9 @@ class ValidConfig(ConfigParser):
 
     def validate_classification(self):
         self.__check_section_existence("Classification")
+        self.__check_option_entry("Classification", "models")
+        val_assert(self.get("Classification", "models") != "",
+                   "Missing value of 'models' option")
         for model in self.get_as_list("Classification", "models"):
             val_assert(model in self.map_config.options("SupportedModels"),
                        'Model "{}" is not supported'.format(model))
@@ -186,13 +196,16 @@ class ValidConfig(ConfigParser):
             val_assert(value != "", 'Missing value of "{}" option'.format(key))
         batch_size = self.get("Preprocessing", "batch_size", fallback="")
         #
-        self.__check_value(section, "remove_stopwords", [True, False])
+        self.__check_value(section, "remove_stopwords", [True, False],
+                           multiple_values=False)
         #
         normalization_options = parse_plain_sequence(self.map_config.get("Supported", "normalization"))
-        self.__check_value(section, "normalization", normalization_options)
+        self.__check_value(section, "normalization", normalization_options,
+                           multiple_values=False)
         #
         lang_options = parse_plain_sequence(self.map_config.get("Supported", "languages"))
-        self.__check_value(section, "language", lang_options)
+        self.__check_value(section, "language", lang_options,
+                           multiple_values=False)
         #
         lang = self.get(section, "language")
         norm = self.get(section, "normalization")
@@ -200,13 +213,12 @@ class ValidConfig(ConfigParser):
             try:
                 Normalizer(norm, lang)
             except ValueError:
-                print(f"'{norm}' algorithm is not available for language'{lang}'")
-                print(lang_norm_hint(lang))
+                print(lang_norm_hint(lang, norm))
                 exit()
         #
         val_assert(is_int(batch_size) and int(batch_size) > 0,
-                   "Invalid value of 'batch_size:'\n"
-                   "Only positive integers are supported")
+                   f"Invalid value of 'batch_size': {batch_size}\n"
+                   f"Only positive integers are supported")
 
     def validate_word_embedding(self):
         section = "WordEmbedding"
@@ -226,16 +238,17 @@ class ValidConfig(ConfigParser):
         #
         vector_dim = self.get(section, "vector_dim")
         val_assert(is_int(vector_dim) and int(vector_dim) > 0,
-                   "Invalid value of 'vector_dim:'\n"
-                   "Only positive integers are supported")
+                   f"Invalid value of 'vector_dim': {vector_dim}\n"
+                   f"Only positive integers are supported")
         #
         pooling_options = parse_plain_sequence(self.map_config.get("Supported", "pooling"))
-        self.__check_value(section, "pooling", pooling_options)
+        self.__check_value(section, "pooling", pooling_options,
+                           multiple_values=False)
         #
         window = self.get(section, "window")
         val_assert(is_int(window) and int(window) > 0,
-                   "Invalid value of 'vector_dim:'\n"
-                   "Only positive integers are supported")
+                   f"Invalid value of 'window': {window}\n"
+                   f"Only positive integers are supported")
 
     def validate_normalization(self, valid_lang: str) -> None:
         pp_map_config = ConfigParser()
@@ -283,12 +296,19 @@ class ValidConfig(ConfigParser):
         val_assert(option in self.options(section),
                    'Section "{}" is missing "{}" option'.format(section, option))
 
-    def __check_value(self, section, option, supported: list):
-        value = self.get_as_list(section, option)
-        for i in value:
-            val_assert(i in supported,
+    def __check_value(self, section: str, option: str,
+                      supported: list, multiple_values=True):
+        if multiple_values:
+            value = self.get_as_list(section, option)
+            for i in value:
+                val_assert(i in supported,
+                           'Value "{}" of the option "{}" is not supported.\n'
+                           'Supported values: {}'.format(i, option, ", ".join(map(str, supported))))
+        else:
+            value = self.get_primitive(section, option)
+            val_assert(value in supported,
                        'Value "{}" of the option "{}" is not supported.\n'
-                       'Supported values: {}'.format(i, option, ", ".join(map(str, supported))))
+                       'Supported values: {}'.format(value, option, ", ".join(map(str, supported))))
 
     # def get_model_types(self):
     #     model_types = []
