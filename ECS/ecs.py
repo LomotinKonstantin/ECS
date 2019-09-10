@@ -291,7 +291,13 @@ def main():
     rubricators = config.get_as_list("Experiment", "rubricator")
     n_jobs = config.getint("Experiment", "threads")
     n_folds = config.getint("Experiment", "n_folds")
-    test_percent = config.getint("TrainingData", "test_percent") / 100
+    # Заплатка
+    # TODO: починить
+    test_percent = 0
+    if not test_file:
+        test_percent = config.getint("TrainingData", "test_percent")
+        test_percent = test_percent / 100
+
     # Готовим фильтры настроек для поиска кэша
     clear_metadata_filter = {
         "language": language,
