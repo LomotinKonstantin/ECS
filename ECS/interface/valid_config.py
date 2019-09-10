@@ -1,8 +1,8 @@
 import warnings
+
 warnings.filterwarnings("ignore")
 from configparser import ConfigParser
 from os.path import join, exists, dirname, isfile
-from os.path import split as os_split
 from os import linesep
 
 from ECS.interface.validation_tools import *
@@ -56,18 +56,20 @@ class ValidConfig(ConfigParser):
         self.__check_existence(ds_section, "dataset")
         dataset = self.get(ds_section, "dataset")
         val_assert(dataset != "",
-                   'Please specify the training dataset folder name in the "dataset directory"')
+                   f'Please specify full path to the training file (section "[{ds_section}]", option "dataset")')
         val_assert(isfile(dataset),
-                   "Please specify the training file. Dataset directories are no longer supported")
+                   f'Please specify the training file. Dataset directories are no longer supported '
+                   f'(section "[{ds_section}]", option "dataset")')
         ds_path = dataset
-        if not exists(ds_path):
-            val_assert(not ("/" in ds_path or "\\" in ds_path),
-                       f"The dataset '{ds_path}' looks like path, but does not exist")
-            print(f"Searching for '{ds_path}' in default directory")
-            ds_path = join(dirname(__file__), "..", "datasets", os_split(dataset)[-1])
-            val_assert(exists(ds_path),
-                       "Dataset '{}' does not exist!".format(ds_path))
-            self.set(ds_section, "dataset", ds_path)
+        val_assert(exists(ds_path),
+                   "Dataset '{}' does not exist!".format(ds_path))
+        # if not exists(ds_path):
+        #     val_assert(not ("/" in ds_path or "\\" in ds_path),
+        #                f"The dataset '{ds_path}' looks like path, but does not exist "
+        #                f"(section '[{ds_section}]', option 'dataset')")
+        #     print(f"Searching for '{ds_path}' in default directory")
+        #     ds_path = join(dirname(__file__), "..", "datasets", os_split(dataset)[-1])
+        #     self.set(ds_section, "dataset", ds_path)
 
         tp_option_exists = "test_percent" in self.options(ds_section)
         tf_option_exists = "test_file" in self.options(ds_section)
@@ -153,7 +155,7 @@ class ValidConfig(ConfigParser):
             try:
                 m = load_class(path)
                 val_assert(m is not None,
-                           "Module {} cannot be loaded (noneType)".format(path))
+                           "Module {} cannot be loaded. Please check installed packages".format(path))
                 instance = m()
                 params = instance.get_params()
                 for hp in self.options(model):
@@ -165,7 +167,7 @@ class ValidConfig(ConfigParser):
                                                                      ", ".join(params)))
             except ImportError as e:
                 val_assert(False,
-                           "Module {} cannot be loaded ({})".format(path, e))
+                           "Module {} cannot be loaded ({}). Please check installed packages".format(path, e))
             except AttributeError:
                 val_assert(False,
                            'Module {} has no model "{}"'.format(module_name, class_name))
@@ -197,8 +199,9 @@ class ValidConfig(ConfigParser):
         if lang != "auto":
             try:
                 Normalizer(norm, lang)
-            except ValueError as ve:
-                print(f"Unsupported settings combination: {ve}\nPlease check the documentation")
+            except ValueError:
+                print(f"'{norm}' algorithm is not available for language'{lang}'")
+                print(lang_norm_hint(lang))
                 exit()
         #
         val_assert(is_int(batch_size) and int(batch_size) > 0,
