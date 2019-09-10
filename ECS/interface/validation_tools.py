@@ -84,12 +84,15 @@ def val_assert(condition: bool, error_msg: str, leave=True) -> None:
             sys.exit(0)
 
 
-def lang_norm_hint(lang: str) -> str:
-    hint = f"Supported normalizer options for language {lang}:\n"
+def lang_norm_hint(lang: str, norm: str) -> str:
+    intro = f"'{norm}' algorithm is not available for language '{lang}'\n"
+    intro += f"Supported normalizer options for language {lang}:\n"
     if lang == "ru":
+        hint = intro
         for item in ["snowball", "pymystem", "no"]:
             hint += f"\t-{item}\n"
     elif lang == "en":
+        hint = intro
         for item in ["snowball", "wordnet", "porter",
                      "lancaster", "textblob", "no"]:
             hint += f"\t-{item}\n"
@@ -99,6 +102,6 @@ def lang_norm_hint(lang: str) -> str:
 
 
 if __name__ == '__main__':
-    print(lang_norm_hint("ru"))
-    print(lang_norm_hint("en"))
-    print(lang_norm_hint("ch"))
+    print(lang_norm_hint("ru", "porter"))
+    print(lang_norm_hint("en", "pymystem"))
+    print(lang_norm_hint("ch", "no"))
