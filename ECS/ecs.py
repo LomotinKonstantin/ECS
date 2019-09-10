@@ -441,19 +441,25 @@ def main():
             try:
                 model_type = load_class(model_import_mapping[model_name])
             except ImportError as ie:
-                print(f"Не удалось импортировать модель {model_name}, модель будет пропущена "
-                      f"(Ошибка '{ie}')")
+                print(f"\n>>> Unable to import model {model_name}, it will be skipped.")
+                print(f">>> ({ie})\n")
                 continue
             print(f"Fitting parameters for model {model_name} by {rubricator}")
             model_instance = model_type()
             timer = time()
-            best_params = run_grid_search(model_instance=model_instance,
-                                          hyperparameters=hypers,
-                                          x_train=x_train,
-                                          y_train=y_train,
-                                          binary=binary,
-                                          n_folds=n_folds,
-                                          n_jobs=n_jobs)
+            try:
+                best_params = run_grid_search(model_instance=model_instance,
+                                              hyperparameters=hypers,
+                                              x_train=x_train,
+                                              y_train=y_train,
+                                              binary=binary,
+                                              n_folds=n_folds,
+                                              n_jobs=n_jobs)
+            except ValueError as ve:
+                print(f"\n>>> Detected incorrect hyperparameters for model '{model_name}'."
+                      f"It will be skipped.")
+                print(f">>> ({ve})\n")
+                continue
             best_model = refit_model(model_instance=model_type(),
                                      best_params=best_params,
                                      x_train=x_train, y_train=y_train, binary=binary)
