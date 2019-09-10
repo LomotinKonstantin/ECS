@@ -9,6 +9,9 @@ from configparser import ConfigParser
 from importlib import import_module
 
 
+from ECS.interface.validation_tools import lang_norm_hint
+
+
 def expand_language(lang: str):
     if lang == "ru":
         return "russian"
@@ -46,8 +49,9 @@ class Normalizer:
 
     def normalize(self, text: str, return_list=False):
         if self.preproc == 'textblob':
-            alg = self.class_type(text)
-            token_list = alg.lemmatize()
+            # alg = self.class_type(text)
+            # token_list = alg.lemmatize()
+            token_list = [self.class_type(token).lemmatize() for token in text.split()]
         else:
             alg = self.class_type()
             if hasattr(alg, 'stem'):
@@ -294,8 +298,8 @@ class Preprocessor:
             try:
                 res = Normalizer(normalization, lang).normalize(res)
                 res = re.sub(" ".join(self.delim).strip(), self.delim, res)
-            except ValueError as ve:
-                print(f"Unsupported settings combination: {ve}\nPlease check the documentation")
+            except ValueError:
+                print(lang_norm_hint(lang, normalization))
                 exit()
             # print(self.delim in res, type(res))
             # with open("log.txt", "w", encoding="utf-8") as f:
