@@ -327,8 +327,10 @@ def labeled_data_generator(vector_gen, rubricator: str) -> tuple:
 
 
 def aggregate_full_dataset(vector_gen) -> pd.DataFrame:
-    full_df = pd.DataFrame(columns=["vectors", "subj", "ipv", "rgnti"])
+    rubricators = ["subj", "ipv", "rgnti"]
+    full_df = pd.DataFrame(columns=["vectors", *rubricators])
     for chunk in vector_gen:
+        chunk[rubricators] = chunk[rubricators].astype(str)
         full_df = pd.concat([full_df, chunk], ignore_index=True)
     return full_df
 
