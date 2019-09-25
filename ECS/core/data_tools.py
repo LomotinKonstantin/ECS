@@ -10,6 +10,11 @@ from sklearn.model_selection import train_test_split
 
 from ECS.preprocessor.Preprocessor2 import Preprocessor
 from ECS.interface.valid_config import ValidConfig
+from ECS.interface.logging_tools import get_logger, info_ps, error_ps
+
+
+N_LOG_MSGS = 10
+N_CHUNKS_INTERVAL = 50
 
 
 def dicts_equal(d1: dict, d2: dict, ignore_keys=()) -> bool:
@@ -80,22 +85,32 @@ def create_w2v(pp_sources: list,
                        предобработанных данных (pp_generator или caching_pp_generator)
     :returns обученная модель Word2Vec
     """
+    logger = get_logger("ecs.data_tools.create_w2v")
     w2v = Word2Vec(size=vector_dim, min_count=3, workers=3, window=window_size)
     init = False
-    for pp_source in pp_sources:
-        for pp_chunk in pp_source:
-            sentence = [text.split() for text in pp_chunk["text"].values]
-            w2v.build_vocab(sentence, update=init)
-            # TODO: вынести количество эпох в параметры
-            w2v.train(sentence, epochs=20, total_examples=len(sentence))
-            init = True
+    for n_source, pp_source in enumerate(pp_sources, start=1):
+        info_ps(logger, f"Training W2V on source {n_source}/{len(pp_sources)}")
+        for n_chunk, pp_chunk in enumerate(pp_source, start=1):
+            try:
+                if n_chunk % N_CHUNKS_INTERVAL == 0:
+                    info_ps(logger, f"\nChunk {n_chunk}")
+                sentence = [text.split() for text in pp_chunk["text"].values]
+                w2v.build_vocab(sentence, update=init)
+                # TODO: вынести количество эпох в параметры
+                w2v.train(sentence, epochs=20, total_examples=len(sentence))
+                init = True
+            except Exception as e:
+                error_ps(logger, f"An error occurred: {e}. Source {n_source}, chunk {n_chunk} "
+                                 f"(~{(n_chunk - 1) * len(pp_chunk) + 1}{n_chunk * len(pp_chunk)} "
+                                 f"lines in clear file)")
+                exit(1)
     return w2v
 
 
 def timestamp() -> str:
     import datetime
     now = datetime.datetime.today()
-    date = f"{now.hour}-{now.minute}_{now.day}_{now.month}_{str(now.year)[2:]}"
+    date = f"{now.hour}-{now.minute}-{now.second}_{now.day}_{now.month}_{str(now.year)[2:]}"
     return date
 
 
@@ -327,11 +342,16 @@ def labeled_data_generator(vector_gen, rubricator: str) -> tuple:
 
 
 def aggregate_full_dataset(vector_gen) -> pd.DataFrame:
+    logger = get_logger("ecs.data_tools.aggregate_full_dataset")
     rubricators = ["subj", "ipv", "rgnti"]
     full_df = pd.DataFrame(columns=["vectors", *rubricators])
-    for chunk in vector_gen:
-        chunk[rubricators] = chunk[rubricators].astype(str)
-        full_df = pd.concat([full_df, chunk], ignore_index=True)
+    try:
+        for chunk in vector_gen:
+            chunk[rubricators] = chunk[rubricators].astype(str)
+            full_df = pd.concat([full_df, chunk], ignore_index=True)
+    except Exception as e:
+        error_ps(logger, f"Error occurred during loading the dataset in memory: {e}")
+        exit(1)
     return full_df
 
 

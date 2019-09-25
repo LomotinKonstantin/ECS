@@ -100,10 +100,10 @@ class ValidConfig(ConfigParser):
                 else:
                     val_assert(0 < test_percent < 100,
                                '"test_percent" value must be an integer in [1, 99]')
-                    print('Test file is not specified, '
-                          '{}% of the dataset will be used for testing'.format(test_percent))
+                    val_logger.info(f"Test file is not specified, "
+                                    f"{test_percent}% of the dataset will be used for testing")
             else:
-                print('Test file is specified, "test_percent" option will not be used')
+                val_logger.info('Test file is specified, "test_percent" option will not be used')
 
     def validate_experiment(self):
         # title
@@ -177,10 +177,10 @@ class ValidConfig(ConfigParser):
                                                                      ", ".join(params)))
             except ImportError as e:
                 val_assert(False,
-                           "Module {} cannot be loaded ({}). Please check installed packages".format(path, e))
+                           f"Module {path} cannot be loaded ({e}). Please check installed packages")
             except AttributeError:
                 val_assert(False,
-                           'Module {} has no model "{}"'.format(module_name, class_name))
+                           f"Module {module_name} has no model '{class_name}'")
 
     def validate_preprocessing(self):
         # Tested somehow
@@ -213,7 +213,7 @@ class ValidConfig(ConfigParser):
             try:
                 Normalizer(norm, lang)
             except ValueError:
-                print(lang_norm_hint(lang, norm))
+                val_logger.info("\n" + lang_norm_hint(lang, norm))
                 exit()
         #
         val_assert(is_int(batch_size) and int(batch_size) > 0,
@@ -227,9 +227,9 @@ class ValidConfig(ConfigParser):
         um_option_exists = use_model != ""
         if um_option_exists:
             val_assert(exists(use_model), "Cannot find model {}".format(use_model))
-            print("Using specified Word2Vec model: {}".format(use_model))
+            val_logger.info("Using specified Word2Vec model: {}".format(use_model))
         else:
-            print("W2V model is not specified, new model will be created")
+            val_logger.info("W2V model is not specified, new model will be created")
         options = ("vector_dim", "pooling", "window")
         for key in options:
             self.__check_option_entry(section, key)
@@ -274,15 +274,15 @@ class ValidConfig(ConfigParser):
 
     def validate_all(self):
         self.validate_dataset()
-        print("Dataset settings are valid")
+        val_logger.info("Dataset settings are valid")
         self.validate_experiment()
-        print("Experiment settings are valid")
+        val_logger.info("Experiment settings are valid")
         self.validate_preprocessing()
-        print("Preprocessing settings are valid")
+        val_logger.info("Preprocessing settings are valid")
         self.validate_word_embedding()
-        print("WordEmbedding settings are valid")
+        val_logger.info("WordEmbedding settings are valid")
         self.validate_classification()
-        print("Classification settings are valid")
+        val_logger.info("Classification settings are valid")
 
     def __check_existence(self, section, option):
         self.__check_section_existence(section)
@@ -309,17 +309,6 @@ class ValidConfig(ConfigParser):
             val_assert(value in supported,
                        'Value "{}" of the option "{}" is not supported.\n'
                        'Supported values: {}'.format(value, option, ", ".join(map(str, supported))))
-
-    # def get_model_types(self):
-    #     model_types = []
-    #     for m in self.get_as_list("Experiment", "models"):
-    #         path = self.map_config.get("SupportedModels", m)
-    #         model_types.append(load_class(path))
-    #     return model_types
-
-    # def get_model_type(self, model):
-    #     path = self.map_config.get("SupportedModels", model)
-    #     return load_class(path)
 
     def get_hyperparameters(self, model: str):
         hypers = {}

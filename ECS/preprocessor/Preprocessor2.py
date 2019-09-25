@@ -36,19 +36,24 @@ class Normalizer:
         section = f"Supported{self.language.capitalize()}Models"
         if section not in self.map_config.keys():
             raise ValueError('Preprocessing is not supported for this language')
-        if self.preproc not in list(self.map_config[section].keys()):
-            raise ValueError(f'The preprocessing technique is not supported for this language')
-        components = self.map_config['Supported' + self.language.capitalize() + 'Models'][self.preproc].split('.')
-        module_name = ".".join(components[:-1])
-        try:
-            module = import_module(module_name)
-            self.class_type = getattr(module, components[-1])
-        except ImportError:
-            print(f"Package '{module_name}' is not installed!")
-            exit(0)
+        if self.preproc != "no":
+            if self.preproc not in list(self.map_config[section].keys()):
+                raise ValueError(f'The preprocessing technique is not supported for this language')
+            components = self.map_config['Supported' + self.language.capitalize() + 'Models'][self.preproc].split('.')
+            module_name = ".".join(components[:-1])
+            try:
+                module = import_module(module_name)
+                self.class_type = getattr(module, components[-1])
+            except ImportError:
+                print(f"Package '{module_name}' is not installed!")
+                exit(0)
+        else:
+            self.class_type = None
 
     def normalize(self, text: str, return_list=False):
-        if self.preproc == 'textblob':
+        if self.preproc == "no":
+            token_list = text.split()
+        elif self.preproc == 'textblob':
             # alg = self.class_type(text)
             # token_list = alg.lemmatize()
             token_list = [self.class_type(token).lemmatize() for token in text.split()]

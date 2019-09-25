@@ -7,7 +7,9 @@ sys.path.append("..")
 from argparse import ArgumentParser
 import os
 from time import time
+
 from ECS.interface.valid_config import ValidConfig
+from ECS.interface.logging_tools import create_logger, error_ps
 from ECS.preprocessor.Preprocessor2 import Preprocessor
 from ECS.core.data_tools import \
     find_cached_clear, \
@@ -250,16 +252,19 @@ def main():
     args = argparser.parse_args()
     exp_path = args.exp_path
     settings_path = os.path.join(exp_path, "settings.ini")
+    # Создаем логгер
+    logger = create_logger(os.path.join(exp_path, f"{timestamp()}.log"), "ecs.main")
+
     if not os.path.exists(settings_path):
-        print("No settings.ini file found in ", exp_path)
+        logger.info(f"No settings.ini file found in {exp_path}")
         exit(0)
 
     # Загружаем и проверяем конфиг
     config = ValidConfig()
     config.read(settings_path, encoding="cp1251")
-    print("Validating experiment settings...")
+    logger.info("Validating experiment settings...")
     config.validate_all()
-    print("=" * 20, "Validation OK", "=" * 20, "\n")
+    logger.info("=" * 20, "Validation OK", "=" * 20, "\n")
 
     # Находим датасет
     training_file = config.get("TrainingData", "dataset")
@@ -319,6 +324,7 @@ def main():
     train_vec_cache = ""
     test_vec_cache = ""
     vector_gens = {}
+    pp_gens = {}
     # Проводим разведку
     if len(cached_vectors) > 0:
         vector_cache_folder, vector_cache_files = cached_vectors.popitem()
@@ -329,36 +335,40 @@ def main():
         train_test_vec_exist = train_vec_cache and test_vec_cache
         cached_w2v_path = find_cached_w2v(vector_cache_folder)
     if train_test_vec_exist and cached_w2v_path and use_model != "":
-        print("Cached vectors found")
+        logger.info("Cached vectors found")
         w2v_model, language = load_w2v(cached_w2v_path)
         config.set("Preprocessing", "language", language)
         vector_gens["train"] = create_reading_vector_gen(train_vec_cache, chunk_size)
-        vector_gens["train"] = create_reading_vector_gen(test_vec_cache, chunk_size)
+        vector_gens["test"] = create_reading_vector_gen(test_vec_cache, chunk_size)
     else:
         # Либо нет готовых обучающих векторов,
         # либо в кэше нет модели W2V,
         # либо нужно создать их заново при помощи указанной модели
         # Получаем источники чистых текстов
         # Словарь вида {'train': генератор, ['test': генератор]}
-        pp_gens = create_clear_generators(
-            base_dir=dataset_folder,
-            clear_filter=clear_metadata_filter,
-            chunk_size=chunk_size,
-            training_fpath=training_file,
-            test_fpath=test_file,
-            experiment_title=exp_title,
-            pp_params=extract_pp_settings(config)
-        )
+        try:
+            pp_gens = create_clear_generators(
+                base_dir=dataset_folder,
+                clear_filter=clear_metadata_filter,
+                chunk_size=chunk_size,
+                training_fpath=training_file,
+                test_fpath=test_file,
+                experiment_title=exp_title,
+                pp_params=extract_pp_settings(config)
+            )
+        except Exception as e:
+            error_ps(logger, f"Error occurred: {e}")
+            exit(1)
         if w2v_exists:
             # Используем ее
             # И обновляем язык
-            print(f"Using Word2Vec model: {os.path.basename(use_model)}")
+            logger.info(f"Using Word2Vec model: {os.path.basename(use_model)}")
             w2v_model, language = load_w2v(use_model)
             config.set("Preprocessing", "language", language)
         else:
             # Создаем новую
             # Для совместимости преобразуем в список
-            print("Creating new Word2Vec model")
+            logger.info("Creating new Word2Vec model")
             w2v_model = create_w2v(pp_sources=list(pp_gens.values()),
                                    vector_dim=vector_dim,
                                    window_size=window)
@@ -392,12 +402,13 @@ def main():
             vector_gens["test"] = test_vec_gen
     # Время хорошенько загрузить память
     # Собираем обучающие и тестировочные выборки
-    print("Creating dataset")
     training_gen = vector_gens["train"]
+    logger.info("Collecting the training dataset in memory")
     training_df = aggregate_full_dataset(training_gen)
     test_df = None
     if test_file != "":
         test_gen = vector_gens["test"]
+        logger.info("Collecting the test dataset in memory")
         test_df = aggregate_full_dataset(test_gen)
 
     # На этом этапе уже должны быть созданы папки кэша,
@@ -415,6 +426,7 @@ def main():
     w2v_cache_path = os.path.join(vector_cache_folder, w2v_fname)
     w2v_save_path = os.path.join(exp_path, w2v_fname)
     w2v_model.save(w2v_cache_path)
+    logger.info(f"Saving W2V model to {w2v_save_path}")
     w2v_model.save(w2v_save_path)
 
     # Обучаем и тестируем модели
@@ -441,10 +453,10 @@ def main():
             try:
                 model_type = load_class(model_import_mapping[model_name])
             except ImportError as ie:
-                print(f"\n>>> Unable to import model {model_name}, it will be skipped.")
-                print(f">>> ({ie})\n")
+                logger.warning(f"\n>>> Unable to import model {model_name}, it will be skipped.")
+                logger.warning(f">>> ({ie})\n")
                 continue
-            print(f"Fitting parameters for model {model_name} by {rubricator}")
+            logger.info(f"Fitting parameters for model {model_name} by {rubricator}")
             model_instance = model_type()
             timer = time()
             try:
@@ -456,52 +468,65 @@ def main():
                                               n_folds=n_folds,
                                               n_jobs=n_jobs)
             except ValueError as ve:
-                print(f"\n>>> Detected incorrect hyperparameters for model '{model_name}'."
-                      f"It will be skipped.")
-                print(f">>> ({ve})\n")
+                logger.warning(f"\n>>> Detected incorrect hyperparameters ({ve}) for model '{model_name}'."
+                               f"It will be skipped.")
                 continue
-            best_model = refit_model(model_instance=model_type(),
-                                     best_params=best_params,
-                                     x_train=x_train, y_train=y_train, binary=binary)
-            time_elapsed = int(time() - timer)
-
-            # Сохраняем модель
-            model_fname = create_model_fname(model_name=model_name, language=language,
-                                             rubricator=rubricator, pooling=pooling,
-                                             vector_dim=w2v_model.vector_size)
-            model_path = os.path.join(exp_path, model_fname)
-            # Пока эта информация не используется, но в будущем может пригодиться
-            model_metadata = {
-                **vector_metadata_filter,
-                **best_params
-            }
-            save_model(model=best_model, path=model_path, metadata=model_metadata)
-
-            # Создаем и сохраняем отчеты
-            excel_report = create_report(model=best_model, x_test=x_test, y_test=y_test)
-            text_report = create_description(model_name=model_name,
-                                             hyper_grid=hypers,
+            except OSError as ose:
+                state_str = f"(model: {model_name}, rubricator: {rubricator})"
+                error_ps(logger, f"OS has interrupted the grid search process: {ose} {state_str}")
+                exit(1)
+            else:
+                try:
+                    best_model = refit_model(model_instance=model_type(),
                                              best_params=best_params,
-                                             train_file=training_file,
-                                             test_file=test_file,
-                                             train_size=len(x_train),
-                                             test_size=len(x_test),
-                                             stats=excel_report,
-                                             training_secs=time_elapsed)
-            report_fname = create_report_fname(model_name=model_name,
-                                               language=language,
-                                               rubricator=rubricator,
-                                               pooling=pooling,
-                                               vector_dim=w2v_model.vector_size)
-            excel_path = os.path.join(exp_path, f"{report_fname}.xlsx")
-            txt_path = os.path.join(exp_path, f"{report_fname}.txt")
-            save_excel_report(path=excel_path, report=excel_report, rubricator=rubricator)
-            save_txt_report(path=txt_path, report=text_report)
-            # Печатаем мини-отчет
-            mini_report = short_report(excel_report, time_elapsed)
-            print(mini_report)
-    print("Done")
-    print(f"Total time elapsed: {seconds_to_duration(int(time() - total_timer))}")
+                                             x_train=x_train, y_train=y_train, binary=binary)
+                except OSError as ose:
+                    state_str = f"(model: {model_name}, rubricator: {rubricator})"
+                    error_ps(logger, f"OS has interrupted the refitting process: {ose} {state_str}")
+                    exit(1)
+                else:
+                    time_elapsed = int(time() - timer)
+
+                    # Сохраняем модель
+                    model_fname = create_model_fname(model_name=model_name, language=language,
+                                                     rubricator=rubricator, pooling=pooling,
+                                                     vector_dim=w2v_model.vector_size)
+                    model_path = os.path.join(exp_path, model_fname)
+                    # Пока эта информация не используется, но в будущем может пригодиться
+                    model_metadata = {
+                        **vector_metadata_filter,
+                        **best_params
+                    }
+                    logger.info(f"Saving model to {model_path}")
+                    save_model(model=best_model, path=model_path, metadata=model_metadata)
+
+                    # Создаем и сохраняем отчеты
+                    logger.info("Testing model and creating report")
+                    excel_report = create_report(model=best_model, x_test=x_test, y_test=y_test)
+                    text_report = create_description(model_name=model_name,
+                                                     hyper_grid=hypers,
+                                                     best_params=best_params,
+                                                     train_file=training_file,
+                                                     test_file=test_file,
+                                                     train_size=len(x_train),
+                                                     test_size=len(x_test),
+                                                     stats=excel_report,
+                                                     training_secs=time_elapsed)
+                    report_fname = create_report_fname(model_name=model_name,
+                                                       language=language,
+                                                       rubricator=rubricator,
+                                                       pooling=pooling,
+                                                       vector_dim=w2v_model.vector_size)
+                    excel_path = os.path.join(exp_path, f"{report_fname}.xlsx")
+                    txt_path = os.path.join(exp_path, f"{report_fname}.txt")
+                    logger.info(f"Saving reports to {excel_path} and {txt_path}")
+                    save_excel_report(path=excel_path, report=excel_report, rubricator=rubricator)
+                    save_txt_report(path=txt_path, report=text_report)
+                    # Печатаем мини-отчет
+                    mini_report = short_report(excel_report, time_elapsed)
+                    logger.info(f"\n{mini_report}")
+    logger.info("Done")
+    logger.info(f"Total time elapsed: {seconds_to_duration(int(time() - total_timer))}")
 
 
 if __name__ == '__main__':

@@ -2,6 +2,10 @@ import warnings
 warnings.filterwarnings("ignore")
 import sys
 
+from ECS.interface.logging_tools import get_logger
+
+val_logger = get_logger("ecs.validation")
+
 
 # Функции для парсинга типов данных настроек
 # (См. докстринг ValidConfig)
@@ -79,7 +83,7 @@ def str_to_bool(value: str) -> bool:
 
 def val_assert(condition: bool, error_msg: str, leave=True) -> None:
     if not condition:
-        print(error_msg)
+        val_logger.info(error_msg)
         if leave:
             sys.exit(0)
 

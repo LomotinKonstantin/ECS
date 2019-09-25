@@ -14,6 +14,8 @@ from joblib import dump, load
 import pandas as pd
 import numpy as np
 
+from ECS.interface.logging_tools import get_logger, info_ps, error_ps
+
 
 def load_class(classpath: str) -> type:
     """
@@ -54,6 +56,7 @@ def run_grid_search(model_instance,
     scoring = 'f1_weighted'
     skf = StratifiedKFold(shuffle=True, n_splits=n_folds)
     hypers_copy = hyperparameters.copy()
+    logger = get_logger("ecs.model_tools.run_grid_search")
     if binary:
         model_instance = OneVsRestClassifier(model_instance)
         for key in hyperparameters:
@@ -64,6 +67,7 @@ def run_grid_search(model_instance,
                                  scoring=scoring,
                                  cv=skf,
                                  verbose=0)
+    info_ps(logger, "Fitting grid-searcher...")
     grid_searcher.fit(x_train, y_train)
     best_params = grid_searcher.best_params_
     # # Убираем "estimator__" из ключей
@@ -119,12 +123,18 @@ def load_model(path: str) -> tuple:
 
 def create_report(model, x_test: list, y_test: list):
     # Для обратной совместимости используется старый код
+    logger = get_logger("ecs.model_tool.create_report")
     pred = []
-    for p in model.predict_proba(x_test):
-        all_prob = pd.Series(p, index=model.classes_)
-        pred.append(list(all_prob.sort_values(ascending=False).index))
-    return count_stats(predicts=pred, y_test=y_test,
-                       amounts=[1, 2, 3, 4, 5, -1])
+    try:
+        for p in model.predict_proba(x_test):
+            all_prob = pd.Series(p, index=model.classes_)
+            pred.append(list(all_prob.sort_values(ascending=False).index))
+    except Exception as e:
+        error_ps(logger, f"Error occurred during model testing: {e}")
+        exit(1)
+    else:
+        return count_stats(predicts=pred, y_test=y_test,
+                           amounts=[1, 2, 3, 4, 5, -1])
 
 
 def save_excel_report(report: dict, path: str, rubricator: str) -> None:
