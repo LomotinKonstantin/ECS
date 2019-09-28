@@ -13,10 +13,8 @@ def create_logger(fname: str, name: str) -> logging.Logger:
     """
     logging.basicConfig(filename=fname,
                         format="[%(asctime)s] %(name)s - %(levelname)s: %(message)s",
-                        level=logging.INFO, filemode="w")
-    logger = logging.getLogger(name)
-    logger.addHandler(logging.StreamHandler(sys.stdout))
-    return logger
+                        level=logging.ERROR, filemode="w")
+    return get_logger(name)
 
 
 def get_logger(name: str) -> logging.Logger:
@@ -27,6 +25,7 @@ def get_logger(name: str) -> logging.Logger:
     :return: логгер
     """
     logger = logging.getLogger(name)
+    logger.setLevel(logging.INFO)
     logger.addHandler(logging.StreamHandler(sys.stdout))
     return logger
 

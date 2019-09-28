@@ -39,9 +39,15 @@ def pp_from_raw_generator(raw_file: str, chunk_size: int, **pp_settings) -> pd.D
     :param pp_settings: настройки препроцессора
     """
     pp = Preprocessor()
-    for chunk in pd.read_csv(raw_file, encoding="cp1251", quoting=3, sep="\t", chunksize=chunk_size):
-        pp_chunk = pp.preprocess_dataframe(df=chunk, **pp_settings)
-        yield pp_chunk
+    for n, chunk in enumerate(pd.read_csv(raw_file, encoding="cp1251", quoting=3, sep="\t", chunksize=chunk_size)):
+        try:
+            pp_chunk = pp.preprocess_dataframe(df=chunk, **pp_settings)
+        except Exception as e:
+            logger = get_logger("ecs.data_tools.pp_from_raw_generator")
+            error_ps(logger, f"Error occurred during preprocessing chunk {n} of file {raw_file}: {e}")
+            exit(1)
+        else:
+            yield pp_chunk
 
 
 def pp_from_csv_generator(clear_csv_path: str, chunk_size: int) -> pd.DataFrame:
@@ -100,7 +106,7 @@ def create_w2v(pp_sources: list,
                 w2v.train(sentence, epochs=20, total_examples=len(sentence))
                 init = True
             except Exception as e:
-                error_ps(logger, f"An error occurred: {e}. Source {n_source}, chunk {n_chunk} "
+                error_ps(logger, f"An error occurred during training W2V: {e}. Source {n_source}, chunk {n_chunk} "
                                  f"(~{(n_chunk - 1) * len(pp_chunk) + 1}{n_chunk * len(pp_chunk)} "
                                  f"lines in clear file)")
                 exit(1)
@@ -171,7 +177,8 @@ def vectorize_text(text: str, w2v_model: Word2Vec, conv_type: str) -> np.ndarray
     elif conv_type == "max":
         return text_matrix.max(axis=0)
     else:
-        raise ValueError(f"Conv type '{conv_type}' is not supported")
+        get_logger("ecs.data_tools.vectorize_text").error(f"Conv type '{conv_type}' is not supported")
+        exit(1)
 
 
 def vectorize_pp_chunk(pp_chunk: pd.DataFrame, w2v_model: Word2Vec, conv_type: str) -> pd.DataFrame:

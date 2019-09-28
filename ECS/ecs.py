@@ -9,7 +9,7 @@ import os
 from time import time
 
 from ECS.interface.valid_config import ValidConfig
-from ECS.interface.logging_tools import create_logger, error_ps
+from ECS.interface.logging_tools import create_logger, error_ps, get_logger
 from ECS.preprocessor.Preprocessor2 import Preprocessor
 from ECS.core.data_tools import \
     find_cached_clear, \
@@ -121,40 +121,45 @@ def create_clear_generators(base_dir: str,
     :param pp_params: словарь с полными настройками препроцессора
     :return: словарь вида {'train': генератор, ['test': генератор]}
     """
-    pp_sources = {}
-    cached_clear = find_cached_clear(base_dir=base_dir, metadata_filter=clear_filter)
-    clear_file_list = []
-    # Если мы нашли кэш, список станет непустым
-    # А если нет, то мы не зайдем в условие
-    if len(cached_clear) > 0:
-        # Если нашли больше, чем одну папку с чистыми текстами,
-        # берем случайную
-        _, clear_file_list = cached_clear.popitem()
-    # Если список был пустым, то find_cache_for source
-    # вернет пустую строку и будет создан кэширующий генератор
-    train_pp_cache = find_cache_for_source(clear_file_list, training_fpath)
-    if train_pp_cache:
-        pp_sources[train_pp_cache] = pp_from_csv_generator(train_pp_cache, chunk_size)
-    else:
-        pp_sources[training_fpath] = create_caching_pp_gen(raw_path=training_fpath,
-                                                           exp_name=experiment_title,
-                                                           chunk_size=chunk_size,
-                                                           pp_params=pp_params)
-    # Тут возможно 2 ситуации:
-    # 1. Тестового файла не предусмотрено (ничего не делать)
-    # 2. Тестовый кэш не найден (создать кэширующий генератор)
-    if test_fpath:
-        test_pp_cache = find_cache_for_source(clear_file_list, test_fpath)
-        if test_pp_cache:
-            pp_sources[test_pp_cache] = pp_from_csv_generator(test_pp_cache, chunk_size)
+    try:
+        pp_sources = {}
+        cached_clear = find_cached_clear(base_dir=base_dir, metadata_filter=clear_filter)
+        clear_file_list = []
+        # Если мы нашли кэш, список станет непустым
+        # А если нет, то мы не зайдем в условие
+        if len(cached_clear) > 0:
+            # Если нашли больше, чем одну папку с чистыми текстами,
+            # берем случайную
+            _, clear_file_list = cached_clear.popitem()
+        # Если список был пустым, то find_cache_for source
+        # вернет пустую строку и будет создан кэширующий генератор
+        train_pp_cache = find_cache_for_source(clear_file_list, training_fpath)
+        if train_pp_cache:
+            pp_sources[train_pp_cache] = pp_from_csv_generator(train_pp_cache, chunk_size)
         else:
-            pp_sources[test_fpath] = create_caching_pp_gen(raw_path=test_fpath,
-                                                           exp_name=experiment_title,
-                                                           chunk_size=chunk_size,
-                                                           pp_params=pp_params)
-    return train_test_match(pp_sources,
-                            train_raw_path=training_fpath,
-                            test_raw_path=test_fpath)
+            pp_sources[training_fpath] = create_caching_pp_gen(raw_path=training_fpath,
+                                                               exp_name=experiment_title,
+                                                               chunk_size=chunk_size,
+                                                               pp_params=pp_params)
+        # Тут возможно 2 ситуации:
+        # 1. Тестового файла не предусмотрено (ничего не делать)
+        # 2. Тестовый кэш не найден (создать кэширующий генератор)
+        if test_fpath:
+            test_pp_cache = find_cache_for_source(clear_file_list, test_fpath)
+            if test_pp_cache:
+                pp_sources[test_pp_cache] = pp_from_csv_generator(test_pp_cache, chunk_size)
+            else:
+                pp_sources[test_fpath] = create_caching_pp_gen(raw_path=test_fpath,
+                                                               exp_name=experiment_title,
+                                                               chunk_size=chunk_size,
+                                                               pp_params=pp_params)
+        return train_test_match(pp_sources,
+                                train_raw_path=training_fpath,
+                                test_raw_path=test_fpath)
+    except Exception as e:
+        logger = get_logger("ecs.create_clear_generators")
+        error_ps(logger, f"Error occurred during creation of clear generators: {e}")
+        exit(1)
 
 
 def recognize_language(filename: str, encoding="utf8", n_lines=10) -> str:
@@ -264,7 +269,7 @@ def main():
     config.read(settings_path, encoding="cp1251")
     logger.info("Validating experiment settings...")
     config.validate_all()
-    logger.info("=" * 20, "Validation OK", "=" * 20, "\n")
+    logger.info("=" * 20 + "Validation OK" + "=" * 20 + "\n")
 
     # Находим датасет
     training_file = config.get("TrainingData", "dataset")
@@ -324,7 +329,6 @@ def main():
     train_vec_cache = ""
     test_vec_cache = ""
     vector_gens = {}
-    pp_gens = {}
     # Проводим разведку
     if len(cached_vectors) > 0:
         vector_cache_folder, vector_cache_files = cached_vectors.popitem()
@@ -346,19 +350,15 @@ def main():
         # либо нужно создать их заново при помощи указанной модели
         # Получаем источники чистых текстов
         # Словарь вида {'train': генератор, ['test': генератор]}
-        try:
-            pp_gens = create_clear_generators(
-                base_dir=dataset_folder,
-                clear_filter=clear_metadata_filter,
-                chunk_size=chunk_size,
-                training_fpath=training_file,
-                test_fpath=test_file,
-                experiment_title=exp_title,
-                pp_params=extract_pp_settings(config)
-            )
-        except Exception as e:
-            error_ps(logger, f"Error occurred: {e}")
-            exit(1)
+        pp_gens = create_clear_generators(
+            base_dir=dataset_folder,
+            clear_filter=clear_metadata_filter,
+            chunk_size=chunk_size,
+            training_fpath=training_file,
+            test_fpath=test_file,
+            experiment_title=exp_title,
+            pp_params=extract_pp_settings(config)
+        )
         if w2v_exists:
             # Используем ее
             # И обновляем язык
@@ -386,12 +386,16 @@ def main():
                 pp_params=extract_pp_settings(config)
             )
         vector_cache_path = generate_vector_cache_path(raw_path=training_file, exp_name=exp_title)
-        train_vec_gen = caching_vector_generator(pp_source=pp_gens["train"],
-                                                 w2v_file=w2v_model,
-                                                 cache_path=vector_cache_path,
-                                                 conv_type=pooling,
-                                                 pp_metadata=clear_metadata_filter)
-        vector_gens["train"] = train_vec_gen
+        try:
+            train_vec_gen = caching_vector_generator(pp_source=pp_gens["train"],
+                                                     w2v_file=w2v_model,
+                                                     cache_path=vector_cache_path,
+                                                     conv_type=pooling,
+                                                     pp_metadata=clear_metadata_filter)
+        except Exception as e:
+            error_ps(logger, f"Error occurred during creation caching vector generator (training): {e}")
+        else:
+            vector_gens["train"] = train_vec_gen
         if test_file:
             vector_cache_path = generate_vector_cache_path(raw_path=test_file, exp_name=exp_title)
             test_vec_gen = caching_vector_generator(pp_source=pp_gens["test"],

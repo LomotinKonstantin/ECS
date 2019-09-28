@@ -250,7 +250,7 @@ def create_model_fname(model_name: str, language: str,
 
 def short_report(stats: dict, time_elapsed: int) -> str:
     mini_report = f"Work time is {seconds_to_duration(time_elapsed)}"
-    mini_report += "\n\t\taccuracy\tprecision\trecall\tf1-score\n"
+    mini_report += "\n\taccuracy\tprecision\trecall\tf1-score\n"
     keys = list(stats.keys())
     keys.sort()
     for i in keys:

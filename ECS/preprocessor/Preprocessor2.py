@@ -10,6 +10,7 @@ from importlib import import_module
 
 
 from ECS.interface.validation_tools import lang_norm_hint
+from ECS.interface.logging_tools import get_logger, error_ps
 
 
 def expand_language(lang: str):
@@ -33,6 +34,7 @@ class Normalizer:
         self.preproc = preproc
         self.map_config = ConfigParser()
         self.map_config.read_file(open(join(dirname(__file__), "map.ini"), 'r'))
+        self.logger = get_logger("ecs.Preprocessor2.Normalizer")
         section = f"Supported{self.language.capitalize()}Models"
         if section not in self.map_config.keys():
             raise ValueError('Preprocessing is not supported for this language')
@@ -45,8 +47,8 @@ class Normalizer:
                 module = import_module(module_name)
                 self.class_type = getattr(module, components[-1])
             except ImportError:
-                print(f"Package '{module_name}' is not installed!")
-                exit(0)
+                self.logger.error(f"Package '{module_name}' is not installed!")
+                exit(1)
         else:
             self.class_type = None
 
@@ -105,7 +107,8 @@ def remove_empty_items(lst: list):
     try:
         return list(filter(lambda x: len(x.strip()) > 0, lst))
     except AttributeError:
-        print(lst)
+        logger = get_logger("ecs.Preprocessor2.remove_empty_items")
+        logger.error(f"Error occurred during processing the list {lst}")
 
 
 class Preprocessor:
@@ -225,8 +228,6 @@ class Preprocessor:
         # res = re.sub("((?<=\\s)-(?=\\S))|((?<=\\S)-(?=\\s))", " ", res)
         # # Fix blabla - a f - g blablabla
         # res = re.sub("(\\b-\\B)|(\\B-\\b)", " ", res)
-        # Fuck all this stuff
-        # We don't need '-' bullshit
         res = re.sub("[-_]", " ", text)
         res = re.sub(r"(?<=\s)\S(?=\s)", " ", res)
         return self.__dense(res).strip()
@@ -272,46 +273,24 @@ class Preprocessor:
             lang = self.recognize_language(text.lower(), default_lang)
         if lang is None:
             raise ValueError("Unable to recognize language!")
-        # res = text
         self.last_language = lang
         res = text
-        # print("Removing emails...")
         res = self.__remove_email(res)
-        # print(self.delim in res, type(res))
-        # print("Removing $$...$$")
-        # res = self.__remove_double_formulas(res)
         if remove_formulas:
-            # print("Removing $...$")
             res = self.__remove_single_formulas(res)
-        # print("Removing markdown")
         res = self.__remove_md(res)
-        # print(self.delim in res, type(res))
         if remove_stopwords:
-            # print("Dense...")
             res = self.__dense(res)
-            # print(self.delim in res, type(res))
-            # print("Removing stopwords")
             res = self.__remove_stopwords(res.lower(), lang)
-            # print(self.delim in res, type(res))
-        # print("Some beauty...")
         res = self.__beautify(res)
-        # with open("log.txt", "w", encoding="utf8") as f:
-        #     f.write(res)
-        # print(self.delim in res, type(res))
         if normalization != "no":
-            # print("Normalization...")
             try:
                 res = Normalizer(normalization, lang).normalize(res)
                 res = re.sub(" ".join(self.delim).strip(), self.delim, res)
             except ValueError:
-                print(lang_norm_hint(lang, normalization))
+                logger = get_logger("ecs.Preprocessor2.preprocess")
+                logger.info(f"\n{lang_norm_hint(lang, normalization)}")
                 exit()
-            # print(self.delim in res, type(res))
-            # with open("log.txt", "w", encoding="utf-8") as f:
-            #     f.write(res)
-        # print("Removing widow '-'...")
-        # res = re.sub("\\s-\\s", "-", res)
-        # print("And finally done!")
         return res
 
     def preprocess_dataframe(self, df: pd.DataFrame,
@@ -533,7 +512,8 @@ class Preprocessor:
                 self.timer.start()
                 # print("Time recording started")
             else:
-                print(description, "has taken {} sec".format(self.timer.check()))
+                logger = get_logger("ecs.Preprocessor2.__trace_time")
+                logger.info(description, "has taken {} sec".format(self.timer.check()))
 
 
 if __name__ == "__main__":
