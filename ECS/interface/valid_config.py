@@ -40,8 +40,8 @@ class ValidConfig(ConfigParser):
         else:
             return [parse_primitive(value)]
 
-    def get_primitive(self, section: str, option: str):
-        value = self.get(section, option)
+    def get_primitive(self, section: str, option: str, fallback=""):
+        value = self.get(section, option, fallback=fallback)
         return parse_primitive(value)
 
     def set(self, section, option, value=None):
@@ -272,10 +272,31 @@ class ValidConfig(ConfigParser):
                    f"Method '{preproc}' is not supported for language '{valid_lang}'. "
                    f"Available options: {', '.join(options)}")
 
+    def validate_rubr_sections(self):
+        """
+        Проверка пороговых значений. Существование не гарантируется,
+        надо использовать fallback при обращении
+        :return:
+        """
+        min_train = "min_training_rubric"
+        min_test = "min_validation_rubric"
+        for rubr in ["subj", "ipv", "rgnti"]:
+            if rubr not in self.sections():
+                continue
+            for option in [min_train, min_test]:
+                if option in self.options(rubr):
+                    value = self.get_primitive(rubr, option, fallback="0")
+                    if value == "":
+                        value = 0
+                    err_msg = f"Value of [{rubr}] '{option}' must be a non-negative integer (found {value})"
+                    val_assert(is_int(value), err_msg)
+                    val_assert(value >= 0, err_msg)
+
     def validate_all(self):
         self.validate_dataset()
         val_logger.info("Dataset settings are valid")
         self.validate_experiment()
+        self.validate_rubr_sections()
         val_logger.info("Experiment settings are valid")
         self.validate_preprocessing()
         val_logger.info("Preprocessing settings are valid")
@@ -337,8 +358,9 @@ class ValidConfig(ConfigParser):
 if __name__ == '__main__':
     config = ValidConfig()
     config.read(join(dirname(__file__), "../../test/test_settings", "settings.ini"), encoding="cp1251")
-    config.validate_dataset()
-    config.validate_experiment()
-    config.validate_preprocessing()
-    config.validate_word_embedding()
-    config.validate_classification()
+    config.validate_all()
+    # config.validate_dataset()
+    # config.validate_experiment()
+    # config.validate_preprocessing()
+    # config.validate_word_embedding()
+    # config.validate_classification()
