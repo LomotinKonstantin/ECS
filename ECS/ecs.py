@@ -7,6 +7,7 @@ sys.path.append("..")
 from argparse import ArgumentParser
 import os
 from time import time
+from collections import Counter
 
 from ECS.interface.valid_config import ValidConfig
 from ECS.interface.logging_tools import create_logger, error_ps, get_logger
@@ -250,6 +251,33 @@ def create_reading_vector_gen(path: str, chunk_size: int):
     return vec_gen
 
 
+def inplace_rubric_filter(x: list, y: list, threshold: int) -> dict:
+    """
+    Убрать из выборки записи из рубрик, которые встречаются
+    меньше, чем threshold раз
+    !!! МЕНЯЕТ АРГУМЕНТЫ x И y !!!
+
+    :param threshold: минимальное количество текстов в рубрике
+    :param x: массив данных
+    :param y: массив соответствующих меток классов
+    :return: словарь удаленных рубрик с количеством текстов в каждой
+    """
+    # Считаем сколько текстов в рубриках
+    c = Counter(y)
+    res = {}
+    # Создаем фильтр для рубрик, размер которых ниже порога
+    to_drop = filter(lambda c_key: c[c_key] < threshold, c)
+    for drop_rubr in to_drop:
+        res[drop_rubr] = c[drop_rubr]
+        # Получаем список индексов рубрики
+        indices = [ind for ind, val in enumerate(y) if val == drop_rubr]
+        # Удаляем записи
+        for ind in indices:
+            del y[ind]
+            del x[ind]
+    return res
+
+
 def main():
     # Получаем аргументы командной строки
     argparser = ArgumentParser()
@@ -450,6 +478,25 @@ def main():
         else:
             x_train, y_train = df_to_labeled_dataset(full_df=training_df, rubricator=rubricator)
             x_test, y_test = df_to_labeled_dataset(full_df=test_df, rubricator=rubricator)
+        min_training_rubr = config.getint(rubricator, "min_training_rubric", fallback=0)
+        min_test_rubr = config.getint(rubricator, "min_validation_rubric", fallback=0)
+        train_filter_res = {}
+        test_filter_res = {}
+        if min_training_rubr > 0:
+            train_filter_res = inplace_rubric_filter(x_train, y_train, threshold=min_training_rubr)
+            log_str = "Dropped rubrics from training dataset:\n" + \
+                      "\n".join([f"{k} ({v} texts)" for k, v in train_filter_res.items()])
+            logger.info(log_str)
+        if min_test_rubr > 0:
+            test_filter_res = inplace_rubric_filter(x_test, y_test, threshold=min_test_rubr)
+            log_str = "Dropped rubrics from test dataset:\n" + \
+                      "\n".join([f"{k} ({v} texts)" for k, v in test_filter_res.items()])
+            logger.info(log_str)
+        # Проверка на слишком строгие пороги
+        for desc, ds in {"Training dataset": y_train, "Test dataset": y_test}.items():
+            if len(ds) == 0:
+                logger.error(desc + " is empty! All the texts were removed due to the threshold")
+                exit(0)
         for model_name in model_names:
             hypers = config.get_hyperparameters(model_name)
             if model_name == "svm":
