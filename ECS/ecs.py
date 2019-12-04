@@ -251,6 +251,25 @@ def create_reading_vector_gen(path: str, chunk_size: int):
     return vec_gen
 
 
+def inplace_drop_rubrics(x: list, y: list, rubrics) -> None:
+    """
+    Убрать из выборки записи с метками rubrics
+    !!! МЕНЯЕТ АРГУМЕНТЫ x И y !!!
+
+    :param x: массив данных
+    :param y: массив соответствующих меток классов
+    :param rubrics: Коллекция рубрик, которые надо удалить
+    :return: None
+    """
+    for drop_rubr in rubrics:
+        # Получаем список индексов рубрики
+        indices = [ind for ind, val in enumerate(y) if val == drop_rubr]
+        # Удаляем записи
+        for ind in indices:
+            del y[ind]
+            del x[ind]
+
+
 def inplace_rubric_filter(x: list, y: list, threshold: int) -> dict:
     """
     Убрать из выборки записи из рубрик, которые встречаются
@@ -264,17 +283,10 @@ def inplace_rubric_filter(x: list, y: list, threshold: int) -> dict:
     """
     # Считаем сколько текстов в рубриках
     c = Counter(y)
-    res = {}
     # Создаем фильтр для рубрик, размер которых ниже порога
-    to_drop = filter(lambda c_key: c[c_key] < threshold, c)
-    for drop_rubr in to_drop:
-        res[drop_rubr] = c[drop_rubr]
-        # Получаем список индексов рубрики
-        indices = [ind for ind, val in enumerate(y) if val == drop_rubr]
-        # Удаляем записи
-        for ind in indices:
-            del y[ind]
-            del x[ind]
+    to_drop = list(filter(lambda c_key: c[c_key] < threshold, c))
+    res = {k: v for k, v in c.items() if k in to_drop}
+    inplace_drop_rubrics(x, y, to_drop)
     return res
 
 
