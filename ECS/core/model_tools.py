@@ -121,7 +121,7 @@ def load_model(path: str) -> tuple:
     return model, metadata
 
 
-def create_report(model, x_test: list, y_test: list):
+def create_report(model, x_test: np.ndarray, y_test: list):
     # Для обратной совместимости используется старый код
     logger = get_logger("ecs.model_tool.create_report")
     pred = []
@@ -130,8 +130,9 @@ def create_report(model, x_test: list, y_test: list):
             all_prob = pd.Series(p, index=model.classes_)
             pred.append(list(all_prob.sort_values(ascending=False).index))
     except Exception as e:
-        error_ps(logger, f"Error occurred during model testing: {e}")
-        exit(1)
+        raise e
+        # error_ps(logger, f"Error occurred during model testing: {e}")
+        # exit(1)
     else:
         return count_stats(predicts=pred, y_test=y_test,
                            amounts=[1, 2, 3, 4, 5, -1])

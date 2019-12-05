@@ -9,6 +9,8 @@ import os
 from time import time
 from collections import Counter
 
+import numpy as np
+
 from ECS.interface.valid_config import ValidConfig
 from ECS.interface.logging_tools import create_logger, error_ps, get_logger
 from ECS.preprocessor.Preprocessor2 import Preprocessor
@@ -265,7 +267,7 @@ def inplace_drop_rubrics(x: list, y: list, rubrics) -> None:
         # Получаем список индексов рубрики
         indices = [ind for ind, val in enumerate(y) if val == drop_rubr]
         # Удаляем записи
-        for ind in indices:
+        for ind in reversed(indices):
             del y[ind]
             del x[ind]
 
@@ -288,6 +290,21 @@ def inplace_rubric_filter(x: list, y: list, threshold: int) -> dict:
     res = {k: v for k, v in c.items() if k in to_drop}
     inplace_drop_rubrics(x, y, to_drop)
     return res
+
+
+def copy_drop_rubrics(x: list, y: list, rubrics) -> tuple:
+    new_x, new_y = zip(*[(x[i], rubr) for i, rubr in enumerate(y) if rubr not in rubrics])
+    return list(new_x), list(new_y)
+
+
+def copy_rubric_filter(x: list, y: list, threshold: int) -> tuple:
+    # Считаем сколько текстов в рубриках
+    c = Counter(y)
+    # Создаем фильтр для рубрик, размер которых ниже порога
+    to_drop = list(filter(lambda c_key: c[c_key] < threshold, c))
+    res = {k: v for k, v in c.items() if k in to_drop}
+    new_x, new_y = copy_drop_rubrics(x, y, to_drop)
+    return new_x, new_y, res
 
 
 def main():
@@ -496,19 +513,40 @@ def main():
         test_filter_res = {}
         if min_training_rubr > 0:
             train_filter_res = inplace_rubric_filter(x_train, y_train, threshold=min_training_rubr)
-            log_str = "Dropped rubrics from training dataset:\n" + \
+            log_str = f"Dropped rubrics from training dataset for {rubricator}:\n" + \
                       "\n".join([f"{k} ({v} texts)" for k, v in train_filter_res.items()])
             logger.info(log_str)
         if min_test_rubr > 0:
             test_filter_res = inplace_rubric_filter(x_test, y_test, threshold=min_test_rubr)
+            # В датасете тексты с множественными метками дублируются,
+            # поэтому можно просто дропнуть записи с удаленными из train рубриками,
+            # чтобы не учитывать их при тестировании
+            inplace_drop_rubrics(x_test, y_test, rubrics=train_filter_res.keys())
             log_str = "Dropped rubrics from test dataset:\n" + \
                       "\n".join([f"{k} ({v} texts)" for k, v in test_filter_res.items()])
             logger.info(log_str)
+        # Фикс редкого бага, который возникает на малых выборках:
+        # Из x_train дропаются слишком маленькие рубрики
+        # Из x_test - маленькие рубрики и то, что дропнуто из x_train
+        # Но в маленьких выборках могут быть рубрики, которых не было в x_train
+        non_intersect_rubrics = {k for k in Counter(y_test) if k not in Counter(y_train)}
+        inplace_drop_rubrics(x_test, y_test, non_intersect_rubrics)
+
+        # logger.info(non_intersect_rubrics)
+        # logger.info(f"y_train: {Counter(y_train)}")
+        # logger.info(f"y_test: {Counter(y_test)}")
+
         # Проверка на слишком строгие пороги
         for desc, ds in {"Training dataset": y_train, "Test dataset": y_test}.items():
             if len(ds) == 0:
                 logger.error(desc + " is empty! All the texts were removed due to the threshold")
                 exit(0)
+
+        # Почему-то без этого работает на полной выборке
+        # и падает при удалении рубрик
+        # x_train = np.vstack(x_train)
+        # x_test = np.vstack(x_test)
+
         for model_name in model_names:
             hypers = config.get_hyperparameters(model_name)
             if model_name == "svm":
@@ -537,6 +575,9 @@ def main():
             except OSError as ose:
                 state_str = f"(model: {model_name}, rubricator: {rubricator})"
                 error_ps(logger, f"OS has interrupted the grid search process: {ose} {state_str}")
+                exit(1)
+            except AttributeError as ae:
+                logger.error(f"Unsupported data type: {ae}")
                 exit(1)
             else:
                 try:
