@@ -507,40 +507,40 @@ def main():
         else:
             x_train, y_train = df_to_labeled_dataset(full_df=training_df, rubricator=rubricator)
             x_test, y_test = df_to_labeled_dataset(full_df=test_df, rubricator=rubricator)
-        min_training_rubr = config.getint(rubricator, "min_training_rubric", fallback=0)
-        min_test_rubr = config.getint(rubricator, "min_validation_rubric", fallback=0)
-        train_filter_res = {}
-        test_filter_res = {}
-        if min_training_rubr > 0:
-            train_filter_res = inplace_rubric_filter(x_train, y_train, threshold=min_training_rubr)
-            log_str = f"Dropped rubrics from training dataset for {rubricator}:\n" + \
-                      "\n".join([f"{k} ({v} texts)" for k, v in train_filter_res.items()])
-            logger.info(log_str)
-        if min_test_rubr > 0:
-            test_filter_res = inplace_rubric_filter(x_test, y_test, threshold=min_test_rubr)
-            # В датасете тексты с множественными метками дублируются,
-            # поэтому можно просто дропнуть записи с удаленными из train рубриками,
-            # чтобы не учитывать их при тестировании
-            inplace_drop_rubrics(x_test, y_test, rubrics=train_filter_res.keys())
-            log_str = "Dropped rubrics from test dataset:\n" + \
-                      "\n".join([f"{k} ({v} texts)" for k, v in test_filter_res.items()])
-            logger.info(log_str)
+        # min_training_rubr = config.getint(rubricator, "min_training_rubric", fallback=0)
+        # min_test_rubr = config.getint(rubricator, "min_validation_rubric", fallback=0)
+        # train_filter_res = {}
+        # test_filter_res = {}
+        # if min_training_rubr > 0:
+        #     train_filter_res = inplace_rubric_filter(x_train, y_train, threshold=min_training_rubr)
+        #     log_str = f"Dropped rubrics from training dataset for {rubricator}:\n" + \
+        #               "\n".join([f"{k} ({v} texts)" for k, v in train_filter_res.items()])
+        #     logger.info(log_str)
+        # if min_test_rubr > 0:
+        #     test_filter_res = inplace_rubric_filter(x_test, y_test, threshold=min_test_rubr)
+        #     # В датасете тексты с множественными метками дублируются,
+        #     # поэтому можно просто дропнуть записи с удаленными из train рубриками,
+        #     # чтобы не учитывать их при тестировании
+        #     inplace_drop_rubrics(x_test, y_test, rubrics=train_filter_res.keys())
+        #     log_str = "Dropped rubrics from test dataset:\n" + \
+        #               "\n".join([f"{k} ({v} texts)" for k, v in test_filter_res.items()])
+        #     logger.info(log_str)
         # Фикс редкого бага, который возникает на малых выборках:
         # Из x_train дропаются слишком маленькие рубрики
         # Из x_test - маленькие рубрики и то, что дропнуто из x_train
         # Но в маленьких выборках могут быть рубрики, которых не было в x_train
-        non_intersect_rubrics = {k for k in Counter(y_test) if k not in Counter(y_train)}
-        inplace_drop_rubrics(x_test, y_test, non_intersect_rubrics)
+        # non_intersect_rubrics = {k for k in Counter(y_test) if k not in Counter(y_train)}
+        # inplace_drop_rubrics(x_test, y_test, non_intersect_rubrics)
 
         # logger.info(non_intersect_rubrics)
         # logger.info(f"y_train: {Counter(y_train)}")
         # logger.info(f"y_test: {Counter(y_test)}")
 
-        # Проверка на слишком строгие пороги
-        for desc, ds in {"Training dataset": y_train, "Test dataset": y_test}.items():
-            if len(ds) == 0:
-                logger.error(desc + " is empty! All the texts were removed due to the threshold")
-                exit(0)
+        # # Проверка на слишком строгие пороги
+        # for desc, ds in {"Training dataset": y_train, "Test dataset": y_test}.items():
+        #     if len(ds) == 0:
+        #         logger.error(desc + " is empty! All the texts were removed due to the threshold")
+        #         exit(0)
 
         # Почему-то без этого работает на полной выборке
         # и падает при удалении рубрик
