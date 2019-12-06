@@ -9,8 +9,6 @@ import os
 from time import time
 from collections import Counter
 
-import numpy as np
-
 from ECS.interface.valid_config import ValidConfig
 from ECS.interface.logging_tools import create_logger, error_ps, get_logger
 from ECS.preprocessor.Preprocessor2 import Preprocessor
@@ -507,45 +505,44 @@ def main():
         else:
             x_train, y_train = df_to_labeled_dataset(full_df=training_df, rubricator=rubricator)
             x_test, y_test = df_to_labeled_dataset(full_df=test_df, rubricator=rubricator)
-        # min_training_rubr = config.getint(rubricator, "min_training_rubric", fallback=0)
-        # min_test_rubr = config.getint(rubricator, "min_validation_rubric", fallback=0)
-        # train_filter_res = {}
-        # test_filter_res = {}
-        # if min_training_rubr > 0:
-        #     train_filter_res = inplace_rubric_filter(x_train, y_train, threshold=min_training_rubr)
-        #     log_str = f"Dropped rubrics from training dataset for {rubricator}:\n" + \
-        #               "\n".join([f"{k} ({v} texts)" for k, v in train_filter_res.items()])
-        #     logger.info(log_str)
-        # if min_test_rubr > 0:
-        #     test_filter_res = inplace_rubric_filter(x_test, y_test, threshold=min_test_rubr)
-        #     # В датасете тексты с множественными метками дублируются,
-        #     # поэтому можно просто дропнуть записи с удаленными из train рубриками,
-        #     # чтобы не учитывать их при тестировании
-        #     inplace_drop_rubrics(x_test, y_test, rubrics=train_filter_res.keys())
-        #     log_str = "Dropped rubrics from test dataset:\n" + \
-        #               "\n".join([f"{k} ({v} texts)" for k, v in test_filter_res.items()])
-        #     logger.info(log_str)
+        min_training_rubr = config.get_primitive(rubricator, "min_training_rubric", fallback="0") or 1
+        min_test_rubr = config.get_primitive(rubricator, "min_validation_rubric", fallback="0") or 1
+        train_filter_res = {}
+        if min_training_rubr > 1:
+            train_filter_res = inplace_rubric_filter(x_train, y_train, threshold=min_training_rubr)
+            log_str = f"Dropped rubrics from training dataset for {rubricator}:\n" + \
+                      "\n".join([f"{k}\t({v} texts)" for k, v in train_filter_res.items()])
+            logger.info(log_str)
+        if min_test_rubr > 1:
+            test_filter_res = inplace_rubric_filter(x_test, y_test, threshold=min_test_rubr)
+            # В датасете тексты с множественными метками дублируются,
+            # поэтому можно просто дропнуть записи с удаленными из train рубриками,
+            # чтобы не учитывать их при тестировании
+            inplace_drop_rubrics(x_test, y_test, rubrics=train_filter_res.keys())
+            log_str = "Dropped rubrics from test dataset:\n" + \
+                      "\n".join([f"{k}\t({v} texts)" for k, v in test_filter_res.items()])
+            logger.info(log_str)
         # Фикс редкого бага, который возникает на малых выборках:
         # Из x_train дропаются слишком маленькие рубрики
         # Из x_test - маленькие рубрики и то, что дропнуто из x_train
         # Но в маленьких выборках могут быть рубрики, которых не было в x_train
-        # non_intersect_rubrics = {k for k in Counter(y_test) if k not in Counter(y_train)}
-        # inplace_drop_rubrics(x_test, y_test, non_intersect_rubrics)
+        non_intersect_rubrics = {k: v for k, v in Counter(y_test).items() if k not in Counter(y_train)}
+        if non_intersect_rubrics:
+            inplace_drop_rubrics(x_test, y_test, non_intersect_rubrics.keys())
+            logger.info("Rubrics to be ignored during quality metrics calculation:\n" +
+                        "\n".join([f"{k}\t({v} texts)" for k, v in non_intersect_rubrics.items()]))
 
-        # logger.info(non_intersect_rubrics)
-        # logger.info(f"y_train: {Counter(y_train)}")
-        # logger.info(f"y_test: {Counter(y_test)}")
-
-        # # Проверка на слишком строгие пороги
-        # for desc, ds in {"Training dataset": y_train, "Test dataset": y_test}.items():
-        #     if len(ds) == 0:
-        #         logger.error(desc + " is empty! All the texts were removed due to the threshold")
-        #         exit(0)
-
-        # Почему-то без этого работает на полной выборке
-        # и падает при удалении рубрик
-        # x_train = np.vstack(x_train)
-        # x_test = np.vstack(x_test)
+        for desc, ds in {"Training dataset": y_train, "Test dataset": y_test}.items():
+            # Проверка на слишком строгие пороги
+            if len(ds) == 0:
+                logger.error(desc + " is empty! All the texts were removed due to the threshold")
+                exit(0)
+            # Проверка на неприятный баг. Все по непонятной причине ломается,
+            # когда остаются тексты 1 рубрики
+            if len(set(ds)) == 1:
+                logger.error(f"{desc} contains only 1 rubric '{ds[1]}'. "
+                             f"This will cause invalid behavior and ECS crash. Finishing execution")
+                exit(0)
 
         for model_name in model_names:
             hypers = config.get_hyperparameters(model_name)
