@@ -24,10 +24,14 @@ def get_logger(name: str) -> logging.Logger:
     :param name: имя логгера
     :return: логгер
     """
-    logger = logging.getLogger(name)
-    logger.setLevel(logging.INFO)
-    logger.addHandler(logging.StreamHandler(sys.stdout))
-    return logger
+
+    if name in logging.root.manager.loggerDict:
+        return logging.getLogger(name)
+    else:
+        logger = logging.getLogger(name)
+        logger.setLevel(logging.INFO)
+        logger.addHandler(logging.StreamHandler(sys.stdout))
+        return logger
 
 
 def ps_state_str() -> str:
