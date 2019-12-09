@@ -121,13 +121,18 @@ def load_model(path: str) -> tuple:
     return model, metadata
 
 
-def create_report(model, x_test: np.ndarray, y_test: list):
+def create_report(model, x_test: np.ndarray, y_test: list, ignore_rubrics=()):
     # Для обратной совместимости используется старый код
     logger = get_logger("ecs.model_tool.create_report")
     pred = []
     try:
         for p in model.predict_proba(x_test):
             all_prob = pd.Series(p, index=model.classes_)
+            for code in ignore_rubrics:
+                try:
+                    all_prob.drop(code)
+                except KeyError:
+                    pass
             pred.append(list(all_prob.sort_values(ascending=False).index))
     except Exception as e:
         error_ps(logger, f"Error occurred during model testing: {e}")

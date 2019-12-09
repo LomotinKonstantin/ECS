@@ -522,10 +522,7 @@ def main():
             log_str = "Dropped rubrics from test dataset:\n" + \
                       "\n".join([f"{k}\t({v} texts)" for k, v in test_filter_res.items()])
             logger.info(log_str)
-        # Фикс редкого бага, который возникает на малых выборках:
-        # Из x_train дропаются слишком маленькие рубрики
-        # Из x_test - маленькие рубрики и то, что дропнуто из x_train
-        # Но в маленьких выборках могут быть рубрики, которых не было в x_train
+        # Удаляем рубрики, которые есть в test, но нет в training
         non_intersect_rubrics = {k: v for k, v in Counter(y_test).items() if k not in Counter(y_train)}
         if non_intersect_rubrics:
             inplace_drop_rubrics(x_test, y_test, non_intersect_rubrics.keys())
@@ -603,7 +600,10 @@ def main():
 
                     # Создаем и сохраняем отчеты
                     logger.info("Testing model and creating report")
-                    excel_report = create_report(model=best_model, x_test=x_test, y_test=y_test)
+                    excel_report = create_report(model=best_model,
+                                                 x_test=x_test,
+                                                 y_test=y_test,
+                                                 ignore_rubrics=train_filter_res.keys())
                     text_report = create_description(model_name=model_name,
                                                      hyper_grid=hypers,
                                                      best_params=best_params,
