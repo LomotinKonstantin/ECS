@@ -324,7 +324,7 @@ def main():
     config.read(settings_path, encoding="cp1251")
     logger.info("Validating experiment settings...")
     config.validate_all()
-    logger.info("=" * 20 + "Validation OK" + "=" * 20 + "\n")
+    logger.info("\n" + "=" * 20 + "Validation OK" + "=" * 20 + "\n")
 
     # Находим датасет
     training_file = config.get("TrainingData", "dataset")
