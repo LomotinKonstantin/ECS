@@ -508,27 +508,31 @@ def main():
         min_training_rubr = config.get_primitive(rubricator, "min_training_rubric", fallback="0") or 1
         min_test_rubr = config.get_primitive(rubricator, "min_validation_rubric", fallback="0") or 1
         train_filter_res = {}
+
         if min_training_rubr > 1:
             train_filter_res = inplace_rubric_filter(x_train, y_train, threshold=min_training_rubr)
             log_str = f"Dropped rubrics from training dataset for {rubricator}:\n" + \
                       "\n".join([f"{k}\t({v} texts)" for k, v in train_filter_res.items()])
             logger.info(log_str)
         if min_test_rubr > 1:
+            y_test_cntr = Counter(y_test)
             test_filter_res = inplace_rubric_filter(x_test, y_test, threshold=min_test_rubr)
             # В датасете тексты с множественными метками дублируются,
             # поэтому можно просто дропнуть записи с удаленными из train рубриками,
             # чтобы не учитывать их при тестировании
             inplace_drop_rubrics(x_test, y_test, rubrics=train_filter_res.keys())
+            total_test_drop = test_filter_res.copy()
+            for key in train_filter_res:
+                total_test_drop[key] = y_test_cntr[key]
             log_str = "Dropped rubrics from test dataset:\n" + \
-                      "\n".join([f"{k}\t({v} texts)" for k, v in test_filter_res.items()])
+                      "\n".join([f"{k}\t({v} texts)" for k, v in total_test_drop.items()])
             logger.info(log_str)
         # Удаляем рубрики, которые есть в test, но нет в training
         non_intersect_rubrics = {k: v for k, v in Counter(y_test).items() if k not in Counter(y_train)}
         if non_intersect_rubrics:
             inplace_drop_rubrics(x_test, y_test, non_intersect_rubrics.keys())
-            logger.info("Rubrics to be ignored during quality metrics calculation:\n" +
+            logger.info("Following rubrics found only in test dataset. They will be dropped:\n" +
                         "\n".join([f"{k}\t({v} texts)" for k, v in non_intersect_rubrics.items()]))
-
         for desc, ds in {"Training dataset": y_train, "Test dataset": y_test}.items():
             # Проверка на слишком строгие пороги
             if len(ds) == 0:
@@ -603,7 +607,7 @@ def main():
                     excel_report = create_report(model=best_model,
                                                  x_test=x_test,
                                                  y_test=y_test,
-                                                 ignore_rubrics=train_filter_res.keys())
+                                                 )
                     text_report = create_description(model_name=model_name,
                                                      hyper_grid=hypers,
                                                      best_params=best_params,
