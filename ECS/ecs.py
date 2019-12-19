@@ -290,19 +290,12 @@ def inplace_rubric_filter(x: list, y: list, threshold: int) -> dict:
     return res
 
 
-def copy_drop_rubrics(x: list, y: list, rubrics) -> tuple:
-    new_x, new_y = zip(*[(x[i], rubr) for i, rubr in enumerate(y) if rubr not in rubrics])
-    return list(new_x), list(new_y)
-
-
-def copy_rubric_filter(x: list, y: list, threshold: int) -> tuple:
-    # Считаем сколько текстов в рубриках
-    c = Counter(y)
-    # Создаем фильтр для рубрик, размер которых ниже порога
-    to_drop = list(filter(lambda c_key: c[c_key] < threshold, c))
-    res = {k: v for k, v in c.items() if k in to_drop}
-    new_x, new_y = copy_drop_rubrics(x, y, to_drop)
-    return new_x, new_y, res
+def inplace_keep_rubrics(x: list, y: list, rubrics) -> None:
+    indices = [ind for ind, val in enumerate(y) if val not in rubrics]
+    # Удаляем записи
+    for ind in reversed(indices):
+        del y[ind]
+        del x[ind]
 
 
 def main():
@@ -527,19 +520,19 @@ def main():
             log_str = "Dropped rubrics from test dataset:\n" + \
                       "\n".join([f"{k}\t({v} texts)" for k, v in total_test_drop.items()])
             logger.info(log_str)
-        # Удаляем рубрики, которые есть в test, но нет в training
-        non_intersect_rubrics = {k: v for k, v in Counter(y_test).items() if k not in Counter(y_train)}
-        if non_intersect_rubrics:
-            inplace_drop_rubrics(x_test, y_test, non_intersect_rubrics.keys())
-            logger.info("Following rubrics found only in test dataset. They will be dropped:\n" +
-                        "\n".join([f"{k}\t({v} texts)" for k, v in non_intersect_rubrics.items()]))
+        # Оставляем пересечение рубрик
+        logger.info("Building training/test rubric intersection")
+        intersect_rubrics = {k: v for k, v in Counter(y_test).items() if k in Counter(y_train)}
+        inplace_keep_rubrics(x_train, y_train, intersect_rubrics)
+        inplace_keep_rubrics(x_test, y_test, intersect_rubrics)
+        # Пост-валидация
         for desc, ds in {"Training dataset": y_train, "Test dataset": y_test}.items():
             # Проверка на слишком строгие пороги
             if len(ds) == 0:
                 logger.error(desc + " is empty! All the texts were removed due to the threshold")
                 exit(0)
             # Проверка на неприятный баг. Все по непонятной причине ломается,
-            # когда остаются тексты 1 рубрики
+            # когда остаются только тексты любой одной рубрики
             if len(set(ds)) == 1:
                 logger.error(f"{desc} contains only 1 rubric '{ds[1]}'. "
                              f"This will cause invalid behavior and ECS crash. Finishing execution")
