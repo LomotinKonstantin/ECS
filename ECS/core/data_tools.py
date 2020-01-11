@@ -2,6 +2,7 @@ import warnings
 warnings.filterwarnings("ignore")
 import os
 import pickle
+import datetime
 
 import pandas as pd
 import numpy as np
@@ -114,7 +115,6 @@ def create_w2v(pp_sources: list,
 
 
 def timestamp() -> str:
-    import datetime
     now = datetime.datetime.today()
     date = f"{now.hour}-{now.minute}-{now.second}_{now.day}_{now.month}_{str(now.year)[2:]}"
     return date
@@ -133,7 +133,6 @@ def generate_w2v_fname(vector_dim: int,
     :param additional_info: [опционально] допольнительная короткая строка с информацией
     :return: сгенерированное имя файла
     """
-    import datetime
     now = datetime.datetime.today()
     date = f"{now.day}_{now.month}_{str(now.year)[2:]}"
     name = f"w2v_model_{vector_dim}_{language}"
