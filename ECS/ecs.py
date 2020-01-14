@@ -8,7 +8,8 @@ from argparse import ArgumentParser
 import os
 from time import time
 from collections import Counter
-
+# KERAS_TODO
+# Все хорошенько переписать
 from ECS.interface.valid_config import ValidConfig
 from ECS.interface.logging_tools import create_logger, error_ps, get_logger
 from ECS.preprocessor.Preprocessor2 import Preprocessor

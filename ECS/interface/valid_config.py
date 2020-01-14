@@ -149,6 +149,9 @@ class ValidConfig(ConfigParser):
         self.__check_value("Experiment", "rubricator", ["subj", "ipv", "rgnti"])
 
     def validate_classification(self):
+        # KERAS_TODO
+        # Добавить проверку для кераса
+        # Изобрести формат
         self.__check_section_existence("Classification")
         self.__check_option_entry("Classification", "models")
         val_assert(self.get("Classification", "models") != "",

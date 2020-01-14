@@ -348,6 +348,8 @@ def labeled_data_generator(vector_gen, rubricator: str) -> tuple:
 
 
 def aggregate_full_dataset(vector_gen) -> pd.DataFrame:
+    # KERAS_TODO
+    # Перенести в класс модели склерн
     logger = get_logger("ecs.data_tools.aggregate_full_dataset")
     rubricators = ["subj", "ipv", "rgnti"]
     full_df = pd.DataFrame(columns=["vectors", *rubricators])
@@ -368,6 +370,8 @@ def aggregate_labeled_dataset(labeled_data_source) -> tuple:
     :param labeled_data_source: источник обучающих пар чанков
     :return: пару x, y - полный набор векторов и меток
     """
+    # KERAS_TODO
+    # Перенести в класс модели склерн
     x = []
     y = []
     for x_chunk, y_chunk in labeled_data_source:

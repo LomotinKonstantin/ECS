@@ -23,6 +23,8 @@ def load_class(classpath: str) -> type:
     :param classpath: полное имя класса (например, nltk.stem.snowball.RussianStemmer)
     :return: тип загружаемого класса
     """
+    # KERAS_TODO
+    # Перенести в класс-интерфейс
     components = classpath.split(".")
     class_name = components[-1]
     module_name = ".".join(components[:-1])
@@ -52,7 +54,8 @@ def run_grid_search(model_instance,
     :param n_jobs: количество параллельных потоков
     :return: словарь лучших параметров в совместимом формате
     """
-    # TODO: Возможно, стоит добавить таймер
+    # KERAS_TODO
+    # Добавить реализацию для кераса
     scoring = 'f1_weighted'
     skf = StratifiedKFold(shuffle=True, n_splits=n_folds)
     hypers_copy = hyperparameters.copy()
@@ -79,6 +82,8 @@ def run_grid_search(model_instance,
 
 def refit_model(model_instance, best_params: dict,
                 x_train: list, y_train: list, binary: bool):
+    # KERAS_TODO
+    # Добавить реализацию для кераса
     if binary:
         model_instance = OneVsRestClassifier(model_instance)
     model_instance.set_params(**best_params)
@@ -98,6 +103,8 @@ def save_model(model, path: str, metadata: dict) -> None:
     :param path: путь к файлу для сохранения
     :return: None
     """
+    # KERAS_TODO
+    # Добавить реализацию для кераса
     with open(path, "wb") as file:
         dump(model, file)
         dump(metadata, file)
@@ -111,6 +118,8 @@ def load_model(path: str) -> tuple:
              Если модель старой версии и не содержит метадаты,
              на втором месте будет None
     """
+    # KERAS_TODO
+    # Добавить реализацию для кераса
     metadata = None
     with open(path, "rb") as file:
         model = load(file)
@@ -123,6 +132,8 @@ def load_model(path: str) -> tuple:
 
 def create_report(model, x_test: np.ndarray, y_test: list, ignore_rubrics=()):
     # Для обратной совместимости используется старый код
+    # KERAS_TODO
+    # Переделать под интерфейс обобщенной модели
     logger = get_logger("ecs.model_tool.create_report")
     pred = []
     try:
