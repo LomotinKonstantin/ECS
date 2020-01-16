@@ -25,7 +25,6 @@ class AbstractModel:
     def run_grid_search(self, **kwargs):
         pass
 
-    def refit(self, best_params: dict, x_train: list,
-              y_train: list, binary: bool):
+    def refit(self, **kwargs):
         pass
 
