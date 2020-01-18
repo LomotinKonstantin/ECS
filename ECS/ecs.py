@@ -11,8 +11,9 @@ from collections import Counter
 # KERAS_TODO
 # Все хорошенько переписать
 from ECS.interface.valid_config import ValidConfig
-from ECS.interface.logging_tools import create_logger, error_ps, get_logger
+from ECS.interface.logging_tools import create_logger, error_ps
 from ECS.preprocessor.Preprocessor2 import Preprocessor
+from ECS.core.dataset import Dataset
 from ECS.core.data_tools import \
     find_cached_clear, \
     find_cached_vectors, \
@@ -120,16 +121,6 @@ def main():
     training_file = config.get("TrainingData", "dataset")
     test_file = config.get("TrainingData", "test_file")
     dataset_folder = os.path.dirname(training_file)
-
-    # Определяем язык
-    language = config.get("Preprocessing", "language")
-    if language == "auto":
-        # Для распознавания языка грузим 10 первых строк
-        language = recognize_language(training_file, encoding="cp1251", n_lines=10)
-        # Потом мы будем копировать файл настроек в кэш
-        # Поэтому поддерживаем его актуальным
-        config.set("Preprocessing", "language", language)
-
     # Получаем параметры
     exp_title = config.get_primitive("Experiment", "experiment_title")
     if exp_title == "":
@@ -146,135 +137,37 @@ def main():
     rubricators = config.get_as_list("Experiment", "rubricator")
     n_jobs = config.getint("Experiment", "threads")
     n_folds = config.getint("Experiment", "n_folds")
-    # Заплатка
-    # TODO: починить
-    test_percent = 0
-    if not test_file:
-        test_percent = config.getint("TrainingData", "test_percent")
-        test_percent = test_percent / 100
 
-    # Готовим фильтры настроек для поиска кэша
-    clear_metadata_filter = {
-        "language": language,
-        "remove_stopwords": remove_stopwords,
-        "normalization": normalization
-    }
-    vector_metadata_filter = {
-        **clear_metadata_filter,
-    }
-    for key in ["vector_dim", "window", "pooling"]:
-        vector_metadata_filter[key] = config.get_primitive("WordEmbedding", key)
-    # Создаем источники векторов согласно схеме
-    total_timer = time()
-    cached_vectors = find_cached_vectors(base_dir=dataset_folder,
-                                         metadata_filter=vector_metadata_filter)
-    train_test_vec_exist = False
-    cached_w2v_path = ""
-    vector_cache_path = ""
-    train_vec_cache = ""
-    test_vec_cache = ""
-    vector_gens = {}
-    # Проводим разведку
-    if len(cached_vectors) > 0:
-        vector_cache_folder, vector_cache_files = cached_vectors.popitem()
-        train_vec_cache = find_cache_for_source(vector_cache_files, training_file)
-        test_vec_cache = None
-        if test_file != "":
-            test_vec_cache = find_cache_for_source(vector_cache_files, test_file)
-        train_test_vec_exist = train_vec_cache and test_vec_cache
-        cached_w2v_path = find_cached_w2v(vector_cache_folder)
-    if train_test_vec_exist and cached_w2v_path and use_model != "":
-        logger.info("Cached vectors found")
-        w2v_model, language = load_w2v(cached_w2v_path)
-        config.set("Preprocessing", "language", language)
-        vector_gens["train"] = create_reading_vector_gen(train_vec_cache, chunk_size)
-        vector_gens["test"] = create_reading_vector_gen(test_vec_cache, chunk_size)
-    else:
-        # Либо нет готовых обучающих векторов,
-        # либо в кэше нет модели W2V,
-        # либо нужно создать их заново при помощи указанной модели
-        # Получаем источники чистых текстов
-        # Словарь вида {'train': генератор, ['test': генератор]}
-        pp_gens = create_clear_generators(
-            base_dir=dataset_folder,
-            clear_filter=clear_metadata_filter,
-            chunk_size=chunk_size,
-            training_fpath=training_file,
-            test_fpath=test_file,
-            experiment_title=exp_title,
-            pp_params=extract_pp_settings(config)
-        )
-        if w2v_exists:
-            # Используем ее
-            # И обновляем язык
-            logger.info(f"Using Word2Vec model: {os.path.basename(use_model)}")
-            w2v_model, language = load_w2v(use_model)
-            config.set("Preprocessing", "language", language)
-        else:
-            # Создаем новую
-            # Для совместимости преобразуем в список
-            logger.info("Creating new Word2Vec model")
-            w2v_model = create_w2v(pp_sources=list(pp_gens.values()),
-                                   vector_dim=vector_dim,
-                                   window_size=window)
-            # Увы, генераторы - это одноразовые итераторы
-            # Придется создать их заново
-            # Должны гарантированно получиться
-            # читающие,а не кэширующие
-            pp_gens = create_clear_generators(
-                base_dir=dataset_folder,
-                clear_filter=clear_metadata_filter,
-                chunk_size=chunk_size,
-                training_fpath=training_file,
-                test_fpath=test_file,
-                experiment_title=exp_title,
-                pp_params=extract_pp_settings(config)
-            )
-        vector_cache_path = generate_vector_cache_path(raw_path=training_file, exp_name=exp_title)
-        try:
-            train_vec_gen = caching_vector_generator(pp_source=pp_gens["train"],
-                                                     w2v_file=w2v_model,
-                                                     cache_path=vector_cache_path,
-                                                     conv_type=pooling,
-                                                     pp_metadata=clear_metadata_filter)
-        except Exception as e:
-            error_ps(logger, f"Error occurred during creation caching vector generator (training): {e}")
-        else:
-            vector_gens["train"] = train_vec_gen
-        if test_file:
-            vector_cache_path = generate_vector_cache_path(raw_path=test_file, exp_name=exp_title)
-            test_vec_gen = caching_vector_generator(pp_source=pp_gens["test"],
-                                                    w2v_file=w2v_model,
-                                                    cache_path=vector_cache_path,
-                                                    conv_type=pooling,
-                                                    pp_metadata=clear_metadata_filter)
-            vector_gens["test"] = test_vec_gen
+    # Готовим датасет
+    dataset = Dataset(config)
+
     # Время хорошенько загрузить память
     # Собираем обучающие и тестировочные выборки
-    training_gen = vector_gens["train"]
+    training_gen = dataset.train_vector_generator()
     logger.info("Collecting the training dataset in memory")
     training_df = aggregate_full_dataset(training_gen)
     test_df = None
     if test_file != "":
-        test_gen = vector_gens["test"]
-        logger.info("Collecting the test dataset in memory")
-        test_df = aggregate_full_dataset(test_gen)
+        test_df = dataset.aggregate_test_dataset()
 
     # На этом этапе уже должны быть созданы папки кэша,
     # так как мы гарантированно прогнали все генераторы
     # Копируем файл настроек и W2V
     # По недоразумению мы не храним путь к чистому кэшу,
     # поэтому создаем его заново. TODO: Исправить
-    clear_cache_folder = os.path.dirname(generate_clear_cache_path(training_file, exp_title))
-    vector_cache_folder = os.path.dirname(vector_cache_path)
+    clear_cache_folder = os.path.dirname(dataset.train_clear_cache_path())
+    vector_cache_folder = os.path.dirname(dataset.train_vector_cache_path())
     with open(os.path.join(clear_cache_folder, "settings.ini"), "w") as clear_copy_file:
         config.write(clear_copy_file)
     with open(os.path.join(vector_cache_folder, "settings.ini"), "w") as vector_copy_file:
         config.write(vector_copy_file)
-    w2v_fname = generate_w2v_fname(vector_dim=w2v_model.vector_size, language=language)
+    w2v_model = dataset.w2v_model()
+    w2v_fname = generate_w2v_fname(vector_dim=w2v_model.vector_size, language=dataset.language())
     w2v_cache_path = os.path.join(vector_cache_folder, w2v_fname)
     w2v_save_path = os.path.join(exp_path, w2v_fname)
+    # Кэшируем w2v
     w2v_model.save(w2v_cache_path)
+    # Сохраняем модель как результат
     logger.info(f"Saving W2V model to {w2v_save_path}")
     w2v_model.save(w2v_save_path)
 
@@ -288,13 +181,7 @@ def main():
     # и если размножить векторы сразу для всех рубрикаторов,
     # память может быстро закончиться
     for rubricator in rubricators:
-        if test_df is None:
-            x_train, x_test, y_train, y_test = create_labeled_tt_split(full_df=training_df,
-                                                                       test_percent=test_percent,
-                                                                       rubricator=rubricator)
-        else:
-            x_train, y_train = df_to_labeled_dataset(full_df=training_df, rubricator=rubricator)
-            x_test, y_test = df_to_labeled_dataset(full_df=test_df, rubricator=rubricator)
+        x_train, x_test, y_train, y_test = dataset.aggregated_data_split(rubricator)
         min_training_rubr = config.get_primitive(rubricator, "min_training_rubric", fallback="0") or 1
         min_test_rubr = config.get_primitive(rubricator, "min_validation_rubric", fallback="0") or 1
         train_filter_res = {}
