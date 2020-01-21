@@ -16,7 +16,8 @@ from ECS.core.data_tools import \
     aggregate_full_dataset, \
     generate_clear_cache_path, \
     create_labeled_tt_split, \
-    df_to_labeled_dataset
+    df_to_labeled_dataset, \
+    count_generator_items
 from ECS.interface.logging_tools import get_logger, error_ps
 from ECS.interface.valid_config import ValidConfig
 
@@ -169,6 +170,7 @@ class Dataset:
         self.train_clear_cache_path = generate_clear_cache_path(training_file, exp_title)
         self.train_df = None
         self.test_df = None
+        self.size = -1
 
     def train_vector_generator(self):
         if self.train_vectors_cached:
@@ -219,6 +221,21 @@ class Dataset:
             x_test, y_test = df_to_labeled_dataset(full_df=self.test_df, rubricator=rubricator)
         return x_train, x_test, y_train, y_test
 
-    def test_file_available(self):
+    def is_test_file_available(self):
         return self.test_file_available
 
+    def keras_infinite_train_generator(self):
+        pass
+
+    def keras_test_generator(self):
+        pass
+
+
+"""
+Так, тут все сложнее. 
+Рекуррентным моделям нужны не векторы, а матрицы.
+Нужно сделать:
+1. Изменить создание векторов. Теперь должны создаваться матрицы.
+    1.1. Добавить флаг совместимости (хотя обратную совместимость можно убрать)
+    1.2. Добавить загрузку и сохранение матриц, преобразование в векторы.
+"""

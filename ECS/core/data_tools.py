@@ -605,6 +605,10 @@ def generate_vector_cache_path(raw_path: str, exp_name: str) -> str:
     return cache_fpath
 
 
+def count_generator_items(gen) -> int:
+    return sum(1 for _ in gen)
+
+
 if __name__ == '__main__':
     print(generate_w2v_fname(vector_dim=100,
                              language="ch",
