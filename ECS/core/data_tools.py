@@ -18,6 +18,13 @@ N_LOG_MSGS = 10
 N_CHUNKS_INTERVAL = 50
 
 
+def is_dict_subset(dict_to_check: dict, big_dict: dict) -> bool:
+    for key, value in dict_to_check:
+        if value != big_dict[key]:
+            return False
+    return True
+
+
 def dicts_equal(d1: dict, d2: dict, ignore_keys=()) -> bool:
     keys1 = set(d1.keys())
     keys2 = set(d2.keys())
@@ -154,12 +161,31 @@ def load_w2v(w2v_path: str) -> tuple:
     return w2v_model, lang
 
 
-def vector_from_csv_generator(vector_path: str, chunk_size: int):
-    for chunk in pd.read_csv(vector_path, index_col=0, sep="\t", chunksize=chunk_size, encoding="cp1251"):
+def vector_from_csv_generator(matrix_path: str, chunk_size: int):
+    for chunk in pd.read_csv(matrix_path, index_col=0, sep="\t", chunksize=chunk_size, encoding="cp1251"):
         yield chunk
 
 
+def apply_pooling(matrix: np.ndarray, pooling: str) -> np.ndarray:
+    if pooling == "none":
+        return matrix
+    elif pooling == "sum":
+        return matrix.sum(axis=0)
+    elif pooling == "mean":
+        return matrix.mean(axis=0)
+    elif pooling == "max":
+        return matrix.max(axis=0)
+
+
 def vectorize_text(text: str, w2v_model: Word2Vec, conv_type: str) -> np.ndarray:
+    """
+    Превратить текст в тензор признаков
+    :param text: строка со словами, разделенными пробелом
+    :param w2v_model: модель Word2Vec
+    :param conv_type: если 'sum', 'mean' или 'max' - применяет выбранный пулинг к матрице по столбцам
+                      если 'none' - возвращает матрицу
+    :return: матрица или вектор признаков
+    """
     tokens = text.split()
     text_matrix = []
     for word in tokens:
@@ -169,12 +195,8 @@ def vectorize_text(text: str, w2v_model: Word2Vec, conv_type: str) -> np.ndarray
             word_vector = np.zeros(w2v_model.vector_size)
         text_matrix.append(word_vector)
     text_matrix = np.vstack(text_matrix)
-    if conv_type == "sum":
-        return text_matrix.sum(axis=0)
-    elif conv_type == "mean":
-        return text_matrix.mean(axis=0)
-    elif conv_type == "max":
-        return text_matrix.max(axis=0)
+    if conv_type in ["none", "sum", "max", "mean"]:
+        return apply_pooling(text_matrix, conv_type)
     else:
         get_logger("ecs.data_tools.vectorize_text").error(f"Conv type '{conv_type}' is not supported")
         exit(1)
@@ -185,20 +207,19 @@ def vectorize_pp_chunk(pp_chunk: pd.DataFrame, w2v_model: Word2Vec, conv_type: s
     Добавляет столбец vectors
     :param pp_chunk: датафрейм с колонкой text, содержащей предобработанные тексты
     :param w2v_model: модель Word2Vec
-    :param conv_type: тип свертки: sum, mean или max
+    :param conv_type: тип свертки: sum, mean или max (или none)
     :return: исходный датафрейм с добавленной колонкой vectors
     """
-    vectors = []
+    matrices = []
     for text in pp_chunk["text"]:
-        vectors.append(vectorize_text(text, w2v_model, conv_type))
-    pp_chunk["vectors"] = vectors
+        matrices.append(vectorize_text(text, w2v_model, conv_type))
+    pp_chunk["features"] = matrices
     return pp_chunk
 
 
-def caching_vector_generator(pp_source,
+def caching_matrix_generator(pp_source,
                              w2v_file,
                              cache_path: str,
-                             conv_type: str,
                              pp_metadata: dict) -> pd.DataFrame:
     """
     Кэширующий генератор векторов
@@ -207,7 +228,6 @@ def caching_vector_generator(pp_source,
     :param pp_source: генератор предобработанных чанков
     :param w2v_file: путь к файлу модели Word2Vec или сам объект модели
     :param cache_path: путь к файлу кэша
-    :param conv_type: тип свертки матрицы текста: sum, mean или max
     :return: чанк в формате pd.Dataframe
     """
     if isinstance(w2v_file, str):
@@ -216,8 +236,9 @@ def caching_vector_generator(pp_source,
         model = w2v_file
     metadata = {
         "vector_dim": model.vector_size,
-        # "language": lang,
-        "pooling": conv_type,
+        # Удалено:
+        # language - уже есть в pp_metadata
+        # pooling - пулинг теперь не применяется при кэшировании
         "window": model.window,
         **pp_metadata
     }
@@ -225,16 +246,18 @@ def caching_vector_generator(pp_source,
     with open(cache_invalid_path, "bw") as cache_file:
         pickle.dump(metadata, cache_file)
         for pp_chunk in pp_source:
-            vector_chunk = vectorize_pp_chunk(pp_chunk, w2v_model=model, conv_type=conv_type)
-            for row in vector_chunk.index:
+            # Кэшируем только матрицы
+            matrix_chunk = vectorize_pp_chunk(pp_chunk, w2v_model=model, conv_type="none")
+            for row in matrix_chunk.index:
                 entry = (
-                    vector_chunk.loc[row, "vectors"],
-                    vector_chunk.loc[row, "subj"],
-                    vector_chunk.loc[row, "ipv"],
-                    vector_chunk.loc[row, "rgnti"]
+                    matrix_chunk.loc[row, "features"],
+                    matrix_chunk.loc[row, "subj"],
+                    matrix_chunk.loc[row, "ipv"],
+                    matrix_chunk.loc[row, "rgnti"]
                 )
                 pickle.dump(entry, cache_file)
-            yield vector_chunk
+            # Пусть вызывающий сам применяет пулинг
+            yield matrix_chunk
     if os.path.exists(cache_path):
         os.remove(cache_path)
     os.rename(cache_invalid_path, cache_path)
@@ -246,19 +269,20 @@ def read_pkl_metadata(pkl_path: str) -> dict:
     return metadata
 
 
-def vector_from_pkl_generator(pkl_path: str, chunk_size: int) -> pd.DataFrame:
+def matrix_from_pkl_generator(pkl_path: str, chunk_size: int) -> pd.DataFrame:
     pkl_file = open(pkl_path, "rb")
     # Первая строка - метадата
+    # Пропускаем ее
     pickle.load(pkl_file)
     chunk = {
-        "vectors": [], "subj": [],
+        "features": [], "subj": [],
         "ipv": [], "rgnti": []
     }
     cntr = 0
-    while 1:
+    while True:
         try:
             entry = pickle.load(pkl_file)
-            chunk["vectors"].append(entry[0])
+            chunk["features"].append(entry[0])
             chunk["subj"].append(entry[1])
             chunk["ipv"].append(entry[2])
             chunk["rgnti"].append(entry[3])
@@ -267,45 +291,31 @@ def vector_from_pkl_generator(pkl_path: str, chunk_size: int) -> pd.DataFrame:
                 cntr = 0
                 yield pd.DataFrame(chunk)
                 chunk = {
-                    "vectors": [], "subj": [],
+                    "features": [], "subj": [],
                     "ipv": [], "rgnti": []
                 }
         except EOFError:
             break
     pkl_file.close()
-    if len(chunk["vectors"]) > 0:
+    if len(chunk["features"]) > 0:
         yield pd.DataFrame(chunk)
 
 
-def find_cached_vectors(base_dir: str, metadata_filter: dict) -> dict:
+def find_cached_matrices(base_dir: str, metadata_filter: dict) -> dict:
     """
     Найти закэшированные векторы, отвечающие условиям
     :param base_dir: директория датасета для начала поиска
-    :param metadata_filter: словарь с настройками препроцессора, типом пулинга и языком
+    :param metadata_filter: словарь с настройками препроцессора, размерностью окна w2v и вектора и языком
     :return: словарь путей к найденным файлам вида
              {"абс_путь_к_папке": ["абс_путь_к_файлу1", "абс_путь_к_файлу2"]}
     """
     vector_files = {}
     for entry in os.scandir(base_dir):  # type: os.DirEntry
-        if not (entry.is_dir() and entry.name.endswith("_vectors")):
+        if not (entry.is_dir() and entry.name.endswith("_matrices")):
             continue
         for file in os.scandir(entry.path):  # type: os.DirEntry
             if file.name.endswith(".pkl"):
                 file_metadata = read_pkl_metadata(file.path)
-                if dicts_equal(file_metadata, metadata_filter):
-                    vector_files.setdefault(entry.path, [])
-                    vector_files[entry.path].append(file.path)
-            elif file.name.endswith(".csv"):
-                settings_path = os.path.join(entry.path, "settings.ini")
-                if not os.path.exists(settings_path):
-                    continue
-                config = ValidConfig()
-                config.read(settings_path, encoding="cp1251")
-                file_metadata = {}
-                for key in ["normalization", "language", "remove_stopwords"]:
-                    file_metadata[key] = config.get_primitive("Preprocessing", key)
-                for key in ["vector_dim", "window", "pooling"]:
-                    file_metadata[key] = config.get_primitive("WordEmbedding", key)
                 if dicts_equal(file_metadata, metadata_filter):
                     vector_files.setdefault(entry.path, [])
                     vector_files[entry.path].append(file.path)
@@ -432,14 +442,10 @@ def find_cached_w2v(cache_folder: str) -> str:
     return ""
 
 
-def create_reading_vector_gen(path: str, chunk_size: int):
-    if path.endswith(".csv"):
-        # Поддержка старого текстового формата
-        vec_gen = vector_from_csv_generator(path, chunk_size=chunk_size)
-    else:
-        # Новый бинарный формат (pickle)
-        vec_gen = vector_from_pkl_generator(path, chunk_size=chunk_size)
-    return vec_gen
+def create_reading_matrix_gen(path: str, chunk_size: int):
+    # Новый бинарный формат (pickle)
+    matr_gen = matrix_from_pkl_generator(path, chunk_size=chunk_size)
+    return matr_gen
 
 
 def recognize_language(filename: str, encoding="utf8", n_lines=10) -> str:
@@ -589,7 +595,7 @@ def extract_pp_settings(v_config: ValidConfig) -> dict:
     return pp_params
 
 
-def generate_vector_cache_path(raw_path: str, exp_name: str) -> str:
+def generate_matrix_cache_path(raw_path: str, exp_name: str) -> str:
     """
     Создает название файла чистого кэша для сырого файла.
     Если надо, создает папку.
@@ -597,10 +603,10 @@ def generate_vector_cache_path(raw_path: str, exp_name: str) -> str:
     :param exp_name: название эксперимента
     :return: сгенерированный путь
     """
-    cache_folder = os.path.join(os.path.dirname(raw_path), f"{exp_name}_vectors")
+    cache_folder = os.path.join(os.path.dirname(raw_path), f"{exp_name}_matrices")
     if not os.path.exists(cache_folder):
         os.mkdir(cache_folder)
-    cache_fname = append_to_fname(os.path.basename(raw_path), "_vectors", extension="pkl")
+    cache_fname = append_to_fname(os.path.basename(raw_path), "_matrices", extension="pkl")
     cache_fpath = os.path.join(cache_folder, cache_fname)
     return cache_fpath
 
