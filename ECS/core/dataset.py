@@ -1,18 +1,18 @@
 import os
 
 from ECS.core.data_tools import \
-    find_cached_vectors, \
+    find_cached_matrices, \
     load_w2v, \
     find_cache_for_source, \
     find_cached_w2v, \
-    create_reading_vector_gen, \
+    create_reading_matrix_gen, \
     recognize_language, \
     create_clear_generators, \
     timestamp, \
     extract_pp_settings, \
     create_w2v, \
-    generate_vector_cache_path, \
-    caching_vector_generator, \
+    generate_matrix_cache_path, \
+    caching_matrix_generator, \
     aggregate_full_dataset, \
     generate_clear_cache_path, \
     create_labeled_tt_split, \
@@ -38,17 +38,16 @@ class Dataset:
         pooling = config.get("WordEmbedding", "pooling")
         if exp_title == "":
             exp_title = timestamp()
+            config.set("Experiment", "experiment_title", exp_title)
         w2v_exists = os.path.exists(use_model)
 
         self.base_dir = os.path.dirname(training_file)
-        self.logger = get_logger("Dataset-INITIALIZATION")
+        self.logger = get_logger("Dataset Manager")
         self.w2v_model = None
-        self.test_vectors_cached = False
-        self.train_vectors_cached = False
-        self.test_file_available = bool(self.test_file)
+        self.test_matrices_cached = False
+        self.train_matrices_cached = False
+        self.test_file_available = os.path.exists(self.test_file)
 
-        # Заплатка
-        # TODO: починить
         self.test_percent = 0
         if not self.test_file_available:
             test_percent = config.getint("TrainingData", "test_percent")
@@ -69,37 +68,37 @@ class Dataset:
             "remove_stopwords": remove_stopwords,
             "normalization": normalization
         }
-        self.vector_metadata_filter = {
+        self.matrix_metadata_filter = {
             **clear_metadata_filter,
         }
-        for key in ["vector_dim", "window", "pooling"]:
-            self.vector_metadata_filter[key] = config.get_primitive("WordEmbedding", key)
+        for key in ["vector_dim", "window"]:
+            self.matrix_metadata_filter[key] = config.get_primitive("WordEmbedding", key)
 
-        # Создаем источники векторов согласно схеме
-        cached_vectors = find_cached_vectors(base_dir=self.base_dir,
-                                             metadata_filter=self.vector_metadata_filter)
-        train_test_vec_exist = False
+        # Создаем источники матрицы согласно схеме
+        cached_matrices = find_cached_matrices(base_dir=self.base_dir,
+                                               metadata_filter=self.matrix_metadata_filter)
+        train_test_matr_exist = False
         cached_w2v_path = ""
-        train_vec_cache = ""
-        test_vec_cache = ""
-        vector_gens = {}
+        train_matr_cache = ""
+        test_matr_cache = ""
+        matrix_gens = {}
         # Проводим разведку
-        if len(cached_vectors) > 0:
-            vector_cache_folder, vector_cache_files = cached_vectors.popitem()
-            train_vec_cache = find_cache_for_source(vector_cache_files, training_file)
-            test_vec_cache = None
+        if len(cached_matrices) > 0:
+            matrix_cache_folder, matrix_cache_files = cached_matrices.popitem()
+            train_matr_cache = find_cache_for_source(matrix_cache_files, training_file)
+            test_matr_cache = None
             if self.test_file_available:
-                test_vec_cache = find_cache_for_source(vector_cache_files, self.test_file)
-            train_test_vec_exist = train_vec_cache and test_vec_cache
-            cached_w2v_path = find_cached_w2v(vector_cache_folder)
-        if train_test_vec_exist and cached_w2v_path and use_model != "":
+                test_matr_cache = find_cache_for_source(matrix_cache_files, self.test_file)
+            train_test_matr_exist = train_matr_cache and test_matr_cache
+            cached_w2v_path = find_cached_w2v(matrix_cache_folder)
+        if train_test_matr_exist and cached_w2v_path and use_model != "":
             self.logger.info("Cached vectors found")
             w2v_model, language = load_w2v(cached_w2v_path)
             config.set("Preprocessing", "language", language)
-            vector_gens["train"] = create_reading_vector_gen(train_vec_cache, self.chunk_size)
-            vector_gens["test"] = create_reading_vector_gen(test_vec_cache, self.chunk_size)
+            matrix_gens["train"] = create_reading_matrix_gen(train_matr_cache, self.chunk_size)
+            matrix_gens["test"] = create_reading_matrix_gen(test_matr_cache, self.chunk_size)
         else:
-            # Либо нет готовых обучающих векторов,
+            # Либо нет готовых обучающих матриц,
             # либо в кэше нет модели W2V,
             # либо нужно создать их заново при помощи указанной модели
             # Получаем источники чистых текстов
@@ -126,7 +125,7 @@ class Dataset:
                 self.w2v_model = create_w2v(pp_sources=list(pp_gens.values()),
                                             vector_dim=vector_dim,
                                             window_size=window)
-                # Увы, генераторы - это одноразовые итераторы
+                # Генераторы - это одноразовые итераторы
                 # Придется создать их заново
                 # Должны гарантированно получиться
                 # читающие,а не кэширующие
@@ -140,95 +139,157 @@ class Dataset:
                     pp_params=extract_pp_settings(config)
                 )
 
-            self.train_vector_cache_path = generate_vector_cache_path(raw_path=training_file,
+            # Переходим к матрицам
+
+            self.train_matrix_cache_path = generate_matrix_cache_path(raw_path=training_file,
                                                                       exp_name=exp_title)
             try:
-                train_vec_gen = caching_vector_generator(pp_source=pp_gens["train"],
-                                                         w2v_file=self.w2v_model,
-                                                         cache_path=self.train_vector_cache_path,
-                                                         conv_type=pooling,
-                                                         pp_metadata=clear_metadata_filter)
+                train_matr_gen = caching_matrix_generator(pp_source=pp_gens["train"],
+                                                          w2v_file=self.w2v_model,
+                                                          cache_path=self.train_matrix_cache_path,
+                                                          pp_metadata=clear_metadata_filter)
             except Exception as e:
                 error_ps(self.logger,
                          f"Error occurred during creation caching vector generator (training): {e}")
             else:
-                vector_gens["train"] = train_vec_gen
-            self.test_vector_cache_path = ""
+                matrix_gens["train"] = train_matr_gen
+            self.test_matrix_cache_path = ""
             self.test_clear_cache_path = ""
             if self.test_file_available:
-                self.test_vector_cache_path = generate_vector_cache_path(raw_path=self.test_file,
+                self.test_matrix_cache_path = generate_matrix_cache_path(raw_path=self.test_file,
                                                                          exp_name=exp_title)
                 self.test_clear_cache_path = generate_clear_cache_path(raw_path=self.test_file,
                                                                        exp_name=exp_title)
-                test_vec_gen = caching_vector_generator(pp_source=pp_gens["test"],
+                test_vec_gen = caching_matrix_generator(pp_source=pp_gens["test"],
                                                         w2v_file=self.w2v_model,
-                                                        cache_path=self.test_vector_cache_path,
-                                                        conv_type=pooling,
+                                                        cache_path=self.test_matrix_cache_path,
                                                         pp_metadata=clear_metadata_filter)
-                vector_gens["test"] = test_vec_gen
-        self.vector_gens = vector_gens
+                matrix_gens["test"] = test_vec_gen
+        self.matrix_gens = matrix_gens
         self.train_clear_cache_path = generate_clear_cache_path(training_file, exp_title)
         self.train_df = None
         self.test_df = None
-        self.size = -1
+        self.train_size = -1
+        self.test_size = -1
 
-    def train_vector_generator(self):
-        if self.train_vectors_cached:
-            self.vector_gens["train"] = create_reading_vector_gen(self.train_vector_cache_path,
-                                                                  self.chunk_size)
-        self.train_vectors_cached = True
-        return self.vector_gens["train"]
+    def train_matrix_generator(self, chunk_size=None):
+        # После создания датасета в словаре лежит читающий либо кэширующий генератор
+        # Поэтому первый раз всегда возвращаем его
+        # А в последующие вызовы создаем читающий
+        if chunk_size is None:
+            chunk_size = self.chunk_size
+        if self.train_matrices_cached:
+            self.matrix_gens["train"] = create_reading_matrix_gen(path=self.train_matrix_cache_path,
+                                                                  chunk_size=chunk_size)
+        self.train_matrices_cached = True
+        return self.matrix_gens["train"]
 
-    def test_vector_generator(self):
-        if not self.test_vector_cache_path:
-            self.logger.error("No test cache found")
-            raise FileNotFoundError("No test cache found")
-        if self.test_vectors_cached:
-            self.vector_gens["test"] = create_reading_vector_gen(self.test_vector_cache_path,
-                                                                 self.chunk_size)
-        self.test_vectors_cached = True
-        return self.vector_gens["test"]
+    def test_matrix_generator(self, chunk_size=None):
+        if not self.test_file_available:
+            self.logger.error("Unable to create test matrix generator (test file is not provided)")
+            raise FileNotFoundError("No test file available")
+        if chunk_size is None:
+            chunk_size = self.chunk_size
+        if self.test_matrices_cached:
+            self.matrix_gens["test"] = create_reading_matrix_gen(path=self.test_matrix_cache_path,
+                                                                 chunk_size=chunk_size)
+        self.test_matrices_cached = True
+        return self.matrix_gens["test"]
 
-    def aggregate_test_dataset(self):
-        return aggregate_full_dataset(self.test_vector_generator())
-
-    def aggregate_train_dataset(self):
-        return aggregate_full_dataset(self.train_vector_generator())
-
-    def train_clear_cache_path(self):
+    def get_train_clear_cache_path(self):
         return self.train_clear_cache_path
 
-    def train_vector_cache_path(self):
-        return self.train_vector_cache_path
+    def get_train_vector_cache_path(self):
+        return self.train_matrix_cache_path
 
-    def w2v_model(self):
+    def get_w2v_model(self):
         return self.w2v_model
 
-    def language(self):
+    def get_language(self):
         return self.language
-
-    def aggregated_data_split(self, rubricator: str) -> tuple:
-        if self.train_df is None:
-            self.train_df = aggregate_full_dataset(self.train_vector_generator())
-        if not self.test_file_available:
-            # Если нет тестового файла
-            x_train, x_test, y_train, y_test = create_labeled_tt_split(full_df=self.train_df,
-                                                                       test_percent=self.test_percent,
-                                                                       rubricator=rubricator)
-        else:
-            self.test_df = aggregate_full_dataset(self.test_vector_generator())
-            x_train, y_train = df_to_labeled_dataset(full_df=self.train_df, rubricator=rubricator)
-            x_test, y_test = df_to_labeled_dataset(full_df=self.test_df, rubricator=rubricator)
-        return x_train, x_test, y_train, y_test
 
     def is_test_file_available(self):
         return self.test_file_available
 
-    def keras_infinite_train_generator(self):
-        pass
+    def sklearn_dataset_split(self, rubricator: str) -> tuple:
+        if self.train_df is None:
+            self.train_df = aggregate_full_dataset(self.train_matrix_generator())
+        if self.test_file_available:
+            if self.test_df is None:
+                self.test_df = aggregate_full_dataset(self.test_matrix_generator())
+            x_train, y_train = df_to_labeled_dataset(full_df=self.train_df, rubricator=rubricator)
+            x_test, y_test = df_to_labeled_dataset(full_df=self.test_df, rubricator=rubricator)
+        else:
+            x_train, x_test, y_train, y_test = create_labeled_tt_split(full_df=self.train_df,
+                                                                       test_percent=self.test_percent,
+                                                                       rubricator=rubricator)
+        self.train_size = len(x_train) + len(y_train)
+        self.test_size = len(x_test) + len(y_test)
+        return x_train, x_test, y_train, y_test
 
-    def keras_test_generator(self):
-        pass
+    def __init_sizes(self):
+        if self.train_size == -1:
+            # Если размер еще не известен
+            samples_in_train_file = count_generator_items(self.train_matrix_generator())
+            if self.test_file_available:
+                self.train_size = samples_in_train_file
+                self.test_size = count_generator_items(self.test_matrix_generator())
+            else:
+                self.test_size = int(samples_in_train_file * self.test_percent)
+                self.train_size = samples_in_train_file - self.test_size
+
+    def keras_infinite_train_generator(self, rubricator: str):
+        """
+
+        :return: генератор возвращает пары (матрица, метка_класса) по одному сэмплу,
+                 так как в матрицах разное количество строк, и они не стакаются
+        """
+        self.__init_sizes()
+        if self.test_file_available:
+            while True:
+                for chunk in self.train_matrix_generator():
+                    for row in chunk.index:
+                        matr = chunk.loc[row, "features"]
+                        label = chunk.loc[row, rubricator]
+                        yield matr, label
+        else:
+            last_idx = self.train_size - 1
+            while True:
+                cur_idx = 0
+                for chunk in self.train_matrix_generator(chunk_size=1):
+                    if cur_idx > last_idx:
+                        break
+                    row = chunk.index[0]
+                    matr = chunk.loc[row, "features"]
+                    label = chunk.loc[row, rubricator]
+                    yield matr, label
+                    cur_idx += 1
+
+    def keras_test_generator(self, rubricator: str):
+        """
+
+        :return: генератор возвращает пары (матрица, метка_класса) по одному сэмплу,
+                 так как в матрицах разное количество строк, и они не стакаются
+        """
+        self.__init_sizes()
+        if self.test_file_available:
+            while True:
+                for chunk in self.test_matrix_generator():
+                    for row in chunk.index:
+                        matr = chunk.loc[row, "features"]
+                        label = chunk.loc[row, rubricator]
+                        yield matr, label
+        else:
+            while True:
+                gen = self.train_matrix_generator(chunk_size=1)
+                # Пропускаем первые train_size элементов
+                for _ in range(self.train_size):
+                    next(gen)
+                for chunk in gen:
+                    row = chunk.index[0]
+                    matr = chunk.loc[row, "features"]
+                    label = chunk.loc[row, rubricator]
+                    yield matr, label
 
 
 """
