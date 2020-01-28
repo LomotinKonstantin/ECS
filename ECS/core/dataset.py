@@ -24,6 +24,8 @@ from ECS.interface.valid_config import ValidConfig
 
 class Dataset:
 
+    DATA_COL = "features"
+
     def __init__(self, config: ValidConfig):
 
         training_file = config.get("TrainingData", "dataset")
@@ -238,65 +240,75 @@ class Dataset:
                 self.test_size = int(samples_in_train_file * self.test_percent)
                 self.train_size = samples_in_train_file - self.test_size
 
+    def __infinite_row_df_generator(self, df, label_col: str, from_idx=0, to_idx=None):
+        while True:
+            for idx in df.index[from_idx:to_idx]:
+                matr = df.loc[idx, self.DATA_COL]
+                label = df.loc[idx, label_col]
+                yield matr, label
+
+    def __infinite_gen_matrix_generator(self, gen_func, label_col: str, skip_lines=0, to_idx=None):
+        while True:
+            cur_idx = 0
+            gen = gen_func(chunk_size=1)
+            for chunk in gen:
+                if to_idx is not None and cur_idx > to_idx:
+                    break
+                for _ in range(skip_lines):
+                    next(gen)
+                row = chunk.index[0]
+                matr = chunk.loc[row, self.DATA_COL]
+                label = chunk.loc[row, label_col]
+                yield matr, label
+                cur_idx += 1
+
     def keras_infinite_train_generator(self, rubricator: str):
         """
-
+        Генератор обучающих пар. Умеет использовать данные, уже загруженные в память
         :return: генератор возвращает пары (матрица, метка_класса) по одному сэмплу,
                  так как в матрицах разное количество строк, и они не стакаются
         """
         self.__init_sizes()
         if self.test_file_available:
-            while True:
-                for chunk in self.train_matrix_generator():
-                    for row in chunk.index:
-                        matr = chunk.loc[row, "features"]
-                        label = chunk.loc[row, rubricator]
-                        yield matr, label
+            if self.train_df is not None:
+                # Датасет уже есть в памяти
+                return self.__infinite_row_df_generator(df=self.train_df, label_col=rubricator)
+            return self.__infinite_gen_matrix_generator(gen_func=self.train_matrix_generator,
+                                                        label_col=rubricator)
         else:
             last_idx = self.train_size - 1
-            while True:
-                cur_idx = 0
-                for chunk in self.train_matrix_generator(chunk_size=1):
-                    if cur_idx > last_idx:
-                        break
-                    row = chunk.index[0]
-                    matr = chunk.loc[row, "features"]
-                    label = chunk.loc[row, rubricator]
-                    yield matr, label
-                    cur_idx += 1
+            if self.train_df is not None:
+                return self.__infinite_row_df_generator(df=self.train_df, label_col=rubricator,
+                                                        to_idx=last_idx + 1)
+            return self.__infinite_gen_matrix_generator(gen_func=self.train_matrix_generator,
+                                                        label_col=rubricator, to_idx=last_idx)
 
     def keras_test_generator(self, rubricator: str):
         """
-
         :return: генератор возвращает пары (матрица, метка_класса) по одному сэмплу,
                  так как в матрицах разное количество строк, и они не стакаются
         """
         self.__init_sizes()
         if self.test_file_available:
-            while True:
-                for chunk in self.test_matrix_generator():
-                    for row in chunk.index:
-                        matr = chunk.loc[row, "features"]
-                        label = chunk.loc[row, rubricator]
-                        yield matr, label
+            if self.test_df is not None:
+                # Датасет уже есть в памяти
+                return self.__infinite_row_df_generator(df=self.test_df, label_col=rubricator)
+            return self.__infinite_gen_matrix_generator(gen_func=self.test_matrix_generator,
+                                                        label_col=rubricator)
         else:
-            while True:
-                gen = self.train_matrix_generator(chunk_size=1)
-                # Пропускаем первые train_size элементов
-                for _ in range(self.train_size):
-                    next(gen)
-                for chunk in gen:
-                    row = chunk.index[0]
-                    matr = chunk.loc[row, "features"]
-                    label = chunk.loc[row, rubricator]
-                    yield matr, label
+            if self.train_df is not None:
+                return self.__infinite_row_df_generator(df=self.train_df,
+                                                        label_col=rubricator,
+                                                        from_idx=self.train_size)
+            return self.__infinite_gen_matrix_generator(gen_func=self.train_matrix_generator,
+                                                        label_col=rubricator,
+                                                        skip_lines=self.train_size)
 
 
 """
 Так, тут все сложнее. 
 Рекуррентным моделям нужны не векторы, а матрицы.
 Нужно сделать:
-1. Изменить создание векторов. Теперь должны создаваться матрицы.
-    1.1. Добавить флаг совместимости (хотя обратную совместимость можно убрать)
-    1.2. Добавить загрузку и сохранение матриц, преобразование в векторы.
+ - Убрать из кераса кэш
+ - Сделать загрузку датасета в память с пулингом
 """
