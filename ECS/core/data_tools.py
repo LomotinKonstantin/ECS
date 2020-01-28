@@ -204,11 +204,11 @@ def vectorize_text(text: str, w2v_model: Word2Vec, conv_type: str) -> np.ndarray
 
 def vectorize_pp_chunk(pp_chunk: pd.DataFrame, w2v_model: Word2Vec, conv_type: str) -> pd.DataFrame:
     """
-    Добавляет столбец vectors
+    Добавляет столбец features
     :param pp_chunk: датафрейм с колонкой text, содержащей предобработанные тексты
     :param w2v_model: модель Word2Vec
     :param conv_type: тип свертки: sum, mean или max (или none)
-    :return: исходный датафрейм с добавленной колонкой vectors
+    :return: исходный датафрейм с добавленной колонкой features
     """
     matrices = []
     for text in pp_chunk["text"]:
@@ -357,15 +357,14 @@ def labeled_data_generator(vector_gen, rubricator: str) -> tuple:
         yield df_to_labeled_dataset(vec_chunk, rubricator)
 
 
-def aggregate_full_dataset(vector_gen) -> pd.DataFrame:
-    # KERAS_TODO
-    # Перенести в класс модели склерн
+def aggregate_full_dataset_with_pooling(vector_gen, pooling: str) -> pd.DataFrame:
     logger = get_logger("ecs.data_tools.aggregate_full_dataset")
     rubricators = ["subj", "ipv", "rgnti"]
-    full_df = pd.DataFrame(columns=["vectors", *rubricators])
+    full_df = pd.DataFrame(columns=["features", *rubricators])
     try:
-        for chunk in vector_gen:
+        for chunk in vector_gen:    # type: pd.DataFrame
             chunk[rubricators] = chunk[rubricators].astype(str)
+            chunk["features"].apply(apply_pooling, args=(pooling,))
             full_df = pd.concat([full_df, chunk], ignore_index=True)
     except Exception as e:
         error_ps(logger, f"Error occurred during loading the dataset in memory: {e}")
@@ -403,7 +402,7 @@ def df_to_labeled_dataset(full_df: pd.DataFrame, rubricator: str) -> tuple:
     for row in full_df.index:
         codes = full_df.loc[row, rubricator].split("\\")
         for code in codes:
-            vec = full_df.loc[row, "vectors"]
+            vec = full_df.loc[row, "features"]
             x.append(vec)
             if rubricator == "rgnti":
                 code = code[:5]

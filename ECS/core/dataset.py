@@ -13,7 +13,7 @@ from ECS.core.data_tools import \
     create_w2v, \
     generate_matrix_cache_path, \
     caching_matrix_generator, \
-    aggregate_full_dataset, \
+    aggregate_full_dataset_with_pooling, \
     generate_clear_cache_path, \
     create_labeled_tt_split, \
     df_to_labeled_dataset, \
@@ -37,7 +37,7 @@ class Dataset:
         exp_title = config.get_primitive("Experiment", "experiment_title")
         vector_dim = config.getint("WordEmbedding", "vector_dim")
         window = config.getint("WordEmbedding", "window")
-        pooling = config.get("WordEmbedding", "pooling")
+        self.pooling = config.get("WordEmbedding", "pooling")
         if exp_title == "":
             exp_title = timestamp()
             config.set("Experiment", "experiment_title", exp_title)
@@ -215,10 +215,12 @@ class Dataset:
 
     def sklearn_dataset_split(self, rubricator: str) -> tuple:
         if self.train_df is None:
-            self.train_df = aggregate_full_dataset(self.train_matrix_generator())
+            self.train_df = aggregate_full_dataset_with_pooling(self.train_matrix_generator(),
+                                                                self.pooling)
         if self.test_file_available:
             if self.test_df is None:
-                self.test_df = aggregate_full_dataset(self.test_matrix_generator())
+                self.test_df = aggregate_full_dataset_with_pooling(self.test_matrix_generator(),
+                                                                   self.pooling)
             x_train, y_train = df_to_labeled_dataset(full_df=self.train_df, rubricator=rubricator)
             x_test, y_test = df_to_labeled_dataset(full_df=self.test_df, rubricator=rubricator)
         else:
