@@ -270,16 +270,10 @@ class Dataset:
         """
         self.__init_sizes()
         if self.test_file_available:
-            if self.train_df is not None:
-                # Датасет уже есть в памяти
-                return self.__infinite_row_df_generator(df=self.train_df, label_col=rubricator)
             return self.__infinite_gen_matrix_generator(gen_func=self.train_matrix_generator,
                                                         label_col=rubricator)
         else:
             last_idx = self.train_size - 1
-            if self.train_df is not None:
-                return self.__infinite_row_df_generator(df=self.train_df, label_col=rubricator,
-                                                        to_idx=last_idx + 1)
             return self.__infinite_gen_matrix_generator(gen_func=self.train_matrix_generator,
                                                         label_col=rubricator, to_idx=last_idx)
 
@@ -290,16 +284,9 @@ class Dataset:
         """
         self.__init_sizes()
         if self.test_file_available:
-            if self.test_df is not None:
-                # Датасет уже есть в памяти
-                return self.__infinite_row_df_generator(df=self.test_df, label_col=rubricator)
             return self.__infinite_gen_matrix_generator(gen_func=self.test_matrix_generator,
                                                         label_col=rubricator)
         else:
-            if self.train_df is not None:
-                return self.__infinite_row_df_generator(df=self.train_df,
-                                                        label_col=rubricator,
-                                                        from_idx=self.train_size)
             return self.__infinite_gen_matrix_generator(gen_func=self.train_matrix_generator,
                                                         label_col=rubricator,
                                                         skip_lines=self.train_size)
