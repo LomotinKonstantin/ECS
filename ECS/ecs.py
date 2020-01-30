@@ -12,26 +12,12 @@ from collections import Counter
 # Все хорошенько переписать
 from ECS.interface.valid_config import ValidConfig
 from ECS.interface.logging_tools import create_logger, error_ps
-from ECS.preprocessor.Preprocessor2 import Preprocessor
 from ECS.core.dataset import Dataset
+from ECS.core.models.sklearn_model import SklearnModel
 from ECS.core.data_tools import \
-    find_cached_clear, \
-    find_cached_vectors, \
-    vector_from_pkl_generator, \
-    vector_from_csv_generator, \
-    caching_vector_generator, \
-    create_w2v, \
     generate_w2v_fname, \
-    pp_from_csv_generator, \
-    caching_pp_generator, \
-    timestamp, \
-    aggregate_full_dataset, \
-    df_to_labeled_dataset, \
-    create_labeled_tt_split, load_w2v
+    timestamp
 from ECS.core.model_tools import \
-    load_class, \
-    run_grid_search, \
-    refit_model, \
     create_report, \
     save_excel_report, \
     create_description, \
@@ -117,22 +103,13 @@ def main():
     config.validate_all()
     logger.info("\n" + "=" * 20 + "Validation OK" + "=" * 20 + "\n")
 
+    total_timer = time()
+
     # Находим датасет
     training_file = config.get("TrainingData", "dataset")
     test_file = config.get("TrainingData", "test_file")
-    dataset_folder = os.path.dirname(training_file)
     # Получаем параметры
-    exp_title = config.get_primitive("Experiment", "experiment_title")
-    if exp_title == "":
-        exp_title = timestamp()
-    remove_stopwords = config.get_primitive("Preprocessing", "remove_stopwords")
-    normalization = config.get_primitive("Preprocessing", "normalization")
-    chunk_size = config.get_primitive("Preprocessing", "batch_size")
-    use_model = config.get("WordEmbedding", "use_model")
-    w2v_exists = os.path.exists(use_model)
-    vector_dim = config.getint("WordEmbedding", "vector_dim")
     pooling = config.get("WordEmbedding", "pooling")
-    window = config.getint("WordEmbedding", "window")
     binary = config.get_primitive("Experiment", "binary")
     rubricators = config.get_as_list("Experiment", "rubricator")
     n_jobs = config.getint("Experiment", "threads")
@@ -141,22 +118,11 @@ def main():
     # Готовим датасет
     dataset = Dataset(config)
 
-    # Время хорошенько загрузить память
-    # Собираем обучающие и тестировочные выборки
-    training_gen = dataset.train_vector_generator()
-    logger.info("Collecting the training dataset in memory")
-    training_df = aggregate_full_dataset(training_gen)
-    test_df = None
-    if test_file != "":
-        test_df = dataset.aggregate_test_dataset()
-
     # На этом этапе уже должны быть созданы папки кэша,
     # так как мы гарантированно прогнали все генераторы
     # Копируем файл настроек и W2V
-    # По недоразумению мы не храним путь к чистому кэшу,
-    # поэтому создаем его заново. TODO: Исправить
-    clear_cache_folder = os.path.dirname(dataset.train_clear_cache_path())
-    vector_cache_folder = os.path.dirname(dataset.train_vector_cache_path())
+    clear_cache_folder = os.path.dirname(dataset.get_train_clear_cache_path())
+    vector_cache_folder = os.path.dirname(dataset.get_train_matrix_cache_path())
     with open(os.path.join(clear_cache_folder, "settings.ini"), "w") as clear_copy_file:
         config.write(clear_copy_file)
     with open(os.path.join(vector_cache_folder, "settings.ini"), "w") as vector_copy_file:
@@ -181,7 +147,7 @@ def main():
     # и если размножить векторы сразу для всех рубрикаторов,
     # память может быстро закончиться
     for rubricator in rubricators:
-        x_train, x_test, y_train, y_test = dataset.aggregated_data_split(rubricator)
+        x_train, x_test, y_train, y_test = dataset.sklearn_dataset_split(rubricator)
         min_training_rubr = config.get_primitive(rubricator, "min_training_rubric", fallback="0") or 1
         min_test_rubr = config.get_primitive(rubricator, "min_validation_rubric", fallback="0") or 1
         train_filter_res = {}
@@ -227,22 +193,20 @@ def main():
             if model_name == "svm":
                 hypers["probability"] = [True]
             try:
-                model_type = load_class(model_import_mapping[model_name])
+                model_interface = SklearnModel(model_import_mapping[model_name])
             except ImportError as ie:
-                logger.warning(f"\n>>> Unable to import model {model_name}, it will be skipped.")
+                logger.warning(f"\n>>> Unable to create model {model_name}, it will be skipped.")
                 logger.warning(f">>> ({ie})\n")
                 continue
             logger.info(f"Fitting parameters for model {model_name} by {rubricator}")
-            model_instance = model_type()
             timer = time()
             try:
-                best_params = run_grid_search(model_instance=model_instance,
-                                              hyperparameters=hypers,
-                                              x_train=x_train,
-                                              y_train=y_train,
-                                              binary=binary,
-                                              n_folds=n_folds,
-                                              n_jobs=n_jobs)
+                best_params = model_interface.run_grid_search(hyperparameters=hypers,
+                                                              x_train=x_train,
+                                                              y_train=y_train,
+                                                              binary=binary,
+                                                              n_folds=n_folds,
+                                                              n_jobs=n_jobs)
             except ValueError as ve:
                 logger.warning(f"\n>>> Detected incorrect hyperparameters ({ve}) for model '{model_name}'."
                                f"It will be skipped.")
@@ -256,9 +220,9 @@ def main():
                 exit(1)
             else:
                 try:
-                    best_model = refit_model(model_instance=model_type(),
-                                             best_params=best_params,
-                                             x_train=x_train, y_train=y_train, binary=binary)
+                    model_interface.refit(best_params=best_params,
+                                          x_train=x_train, y_train=y_train,
+                                          binary=binary)
                 except OSError as ose:
                     state_str = f"(model: {model_name}, rubricator: {rubricator})"
                     error_ps(logger, f"OS has interrupted the refitting process: {ose} {state_str}")
@@ -267,24 +231,24 @@ def main():
                     time_elapsed = int(time() - timer)
 
                     # Сохраняем модель
-                    model_fname = create_model_fname(model_name=model_name, language=language,
+                    model_fname = create_model_fname(model_name=model_name,
+                                                     language=dataset.get_language(),
                                                      rubricator=rubricator, pooling=pooling,
                                                      vector_dim=w2v_model.vector_size)
                     model_path = os.path.join(exp_path, model_fname)
                     # Пока эта информация не используется, но в будущем может пригодиться
                     model_metadata = {
-                        **vector_metadata_filter,
+                        **dataset.get_matrix_md_filter(),
                         **best_params
                     }
                     logger.info(f"Saving model to {model_path}")
-                    save_model(model=best_model, path=model_path, metadata=model_metadata)
+                    save_model(model=model_interface.instance, path=model_path, metadata=model_metadata)
 
                     # Создаем и сохраняем отчеты
                     logger.info("Testing model and creating report")
-                    excel_report = create_report(model=best_model,
+                    excel_report = create_report(model=model_interface.instance,
                                                  x_test=x_test,
-                                                 y_test=y_test,
-                                                 )
+                                                 y_test=y_test)
                     text_report = create_description(model_name=model_name,
                                                      hyper_grid=hypers,
                                                      best_params=best_params,
@@ -295,7 +259,7 @@ def main():
                                                      stats=excel_report,
                                                      training_secs=time_elapsed)
                     report_fname = create_report_fname(model_name=model_name,
-                                                       language=language,
+                                                       language=dataset.get_language(),
                                                        rubricator=rubricator,
                                                        pooling=pooling,
                                                        vector_dim=w2v_model.vector_size)

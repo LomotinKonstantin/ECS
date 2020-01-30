@@ -12,7 +12,7 @@ class SklearnModel(AbstractModel):
     def __init__(self, classpath: str):
         super().__init__(classpath)
         self.instance = self.class_type()
-        self.logger = get_logger("SklearnModel")
+        self.logger = get_logger(f"SklearnModel {self.class_type}")
 
     def save(self, path: str, metadata: dict):
         """
@@ -48,6 +48,7 @@ class SklearnModel(AbstractModel):
 
     def refit(self, best_params: dict, x_train: list,
               y_train: list, binary: bool) -> None:
+        self.instance = self.class_type()
         if binary:
             self.instance = OneVsRestClassifier(self.instance)
         self.instance.set_params(**best_params)

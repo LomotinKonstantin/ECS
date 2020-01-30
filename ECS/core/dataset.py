@@ -201,7 +201,7 @@ class Dataset:
     def get_train_clear_cache_path(self):
         return self.train_clear_cache_path
 
-    def get_train_vector_cache_path(self):
+    def get_train_matrix_cache_path(self):
         return self.train_matrix_cache_path
 
     def get_w2v_model(self):
@@ -212,6 +212,9 @@ class Dataset:
 
     def is_test_file_available(self):
         return self.test_file_available
+
+    def get_matrix_md_filter(self):
+        return self.matrix_metadata_filter
 
     def sklearn_dataset_split(self, rubricator: str) -> tuple:
         if self.train_df is None:
