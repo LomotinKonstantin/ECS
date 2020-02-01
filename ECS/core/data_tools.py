@@ -364,7 +364,7 @@ def aggregate_full_dataset_with_pooling(vector_gen, pooling: str) -> pd.DataFram
     try:
         for chunk in vector_gen:    # type: pd.DataFrame
             chunk[rubricators] = chunk[rubricators].astype(str)
-            chunk["features"].apply(apply_pooling, args=(pooling,))
+            chunk["features"] = chunk["features"].apply(apply_pooling, args=(pooling,))
             full_df = pd.concat([full_df, chunk], ignore_index=True)
     except Exception as e:
         error_ps(logger, f"Error occurred during loading the dataset in memory: {e}")

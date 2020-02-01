@@ -12,7 +12,7 @@ class SklearnModel(AbstractModel):
     def __init__(self, classpath: str):
         super().__init__(classpath)
         self.instance = self.class_type()
-        self.logger = get_logger(f"SklearnModel {self.class_type}")
+        self.logger = get_logger(f"SklearnModel {classpath}")
 
     def save(self, path: str, metadata: dict):
         """

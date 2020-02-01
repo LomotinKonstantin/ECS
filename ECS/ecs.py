@@ -90,11 +90,12 @@ def main():
     exp_path = args.exp_path
     settings_path = os.path.join(exp_path, "settings.ini")
     # Создаем логгер
-    logger = create_logger(os.path.join(exp_path, f"{timestamp()}.log"), "ecs.main")
 
     if not os.path.exists(settings_path):
-        logger.info(f"No settings.ini file found in {exp_path}")
+        print(f"No settings.ini file found in {exp_path}")
         exit(0)
+
+    logger = create_logger(os.path.join(exp_path, f"{timestamp()}.log"), "ecs.main")
 
     # Загружаем и проверяем конфиг
     config = ValidConfig()
@@ -127,8 +128,8 @@ def main():
         config.write(clear_copy_file)
     with open(os.path.join(vector_cache_folder, "settings.ini"), "w") as vector_copy_file:
         config.write(vector_copy_file)
-    w2v_model = dataset.w2v_model()
-    w2v_fname = generate_w2v_fname(vector_dim=w2v_model.vector_size, language=dataset.language())
+    w2v_model = dataset.get_w2v_model()
+    w2v_fname = generate_w2v_fname(vector_dim=w2v_model.vector_size, language=dataset.get_language())
     w2v_cache_path = os.path.join(vector_cache_folder, w2v_fname)
     w2v_save_path = os.path.join(exp_path, w2v_fname)
     # Кэшируем w2v
