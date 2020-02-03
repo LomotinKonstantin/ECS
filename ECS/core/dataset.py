@@ -295,12 +295,3 @@ class Dataset:
             return self.__infinite_gen_matrix_generator(gen_func=self.train_matrix_generator,
                                                         label_col=rubricator,
                                                         skip_lines=self.train_size)
-
-
-"""
-Так, тут все сложнее. 
-Рекуррентным моделям нужны не векторы, а матрицы.
-Нужно сделать:
- - Убрать из кераса кэш
- - Сделать загрузку датасета в память с пулингом
-"""

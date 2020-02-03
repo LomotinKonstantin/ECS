@@ -24,12 +24,11 @@ class ValidConfig(ConfigParser):
             Пример: [3], [1, 2, 3], [15, 15]
     """
     LIST_DELIM = ","
-    map_config = ConfigParser()
 
     def __init__(self):
         super(ValidConfig, self).__init__()
+        self.map_config = ConfigParser()
         self.map_config.read(join(dirname(__file__), "map.ini"))
-        self.optionxform = str
 
     def get_as_list(self, section, key) -> list:
         value = self.get(section, key)
@@ -148,15 +147,83 @@ class ValidConfig(ConfigParser):
         self.__check_option_entry("Experiment", "rubricator")
         self.__check_value("Experiment", "rubricator", ["subj", "ipv", "rgnti"])
 
+    def _validate_keras(self):
+        section = "keras"
+        self.__check_section_existence(section)
+        options = ("models", "optimizer", "learning_rate",
+                   "loss", "n_epochs", "enable_multiprocessing")
+        for key in options:
+            self.__check_option_entry(section, key)
+            value = self.get(section, key)
+            val_assert(value != "", 'Missing value of "{}" option'.format(key))
+        try:
+            models = parse_nested_list(self.get("keras", "models"), lower=True)
+        except Exception as e:
+            print(f"Invalid keras models ({e})")
+        else:
+            supported_layers = self.map_config.options("SupportedLayers")
+            supported_activations = parse_plain_sequence(self.map_config.get("Supported", "activations"))
+            for entry in models:
+                val_assert(type(entry) is list,
+                           f"Invalid keras model description (the error is about '{entry}' )")
+                val_assert(len(entry) > 0, "Error: empty keras model found ('[]')")
+                for idx, layer in enumerate(entry):
+                    parts = layer.split("_")
+                    layer_name = parts[0]
+                    val_assert(layer_name in supported_layers, f"Unsupported layer: {parts[0]}")
+                    if layer_name == "dropout":
+                        val_assert(idx != len(entry) - 1,
+                                   f"Invalid model structure: the last layer cannot be 'dropout'")
+                        val_assert(len(parts) == 2,
+                                   "Invalid dropout specification: drop percent is missing")
+                        drop_percent = parts[1]
+                        val_assert(is_float(drop_percent) and 0 <= float(drop_percent) <= 1,
+                                   "Drop percent must be a positive float in [0, 1]")
+                    else:
+                        if idx != len(entry) - 1:
+                            val_assert(2 <= len(parts) <= 3,
+                                       "All layers (except 'dropout' and the last layer) "
+                                       "must include name, output size and [optionally] activation.\n"
+                                       "Example: [gru_100_tanh, dropout, lstm_50, dense]")
+                            val_assert(is_int(parts[1]) and int(parts[1]) > 0,
+                                       "Output size must be a positive integer")
+                            if len(parts) > 2:
+                                val_assert(parts[2] in supported_activations,
+                                           f"Unsupported activation: {parts[2]}")
+                        else:
+                            val_assert(1 <= len(parts) <= 3,
+                                       "All layers (except 'dropout' and the last layer)"
+                                       "must include name, output size and [optionally] activation.\n"
+                                       "Example: [gru_100_tanh, dropout, lstm_50, dense]")
+                            if len(parts) == 2:
+                                activation = parts[1]
+                                val_assert(activation in supported_activations,
+                                           f"Unsupported activation: {activation}")
+                            elif len(parts) == 3:
+                                activation = parts[2]
+                                val_assert(activation in supported_activations,
+                                           f"Unsupported activation: {activation}")
+        supported_optimizers = self.map_config.options("SupportedOptimizers")
+        self.__check_value(section, "optimizer", supported_optimizers, multiple_values=True)
+        lrs = self.get_as_list(section, "learning_rate")
+        val_assert(all(map(lambda x: is_float(x) and float(x) > 0, lrs)),
+                   "Learning rate must be a positive float")
+        supported_losses = parse_plain_sequence(self.map_config.get("Supported", "losses"))
+        self.__check_value(section, "loss", supported_losses, multiple_values=True)
+        n_epochs = self.get_primitive(section, "n_epochs")
+        val_assert(is_int(n_epochs) and int(n_epochs) > 0,
+                   "Number of epochs must be a positive integer")
+        self.__check_value(section, "enable_multiprocessing", [True, False, 0, 1],
+                           multiple_values=False)
+
     def validate_classification(self):
-        # KERAS_TODO
-        # Добавить проверку для кераса
-        # Изобрести формат
         self.__check_section_existence("Classification")
         self.__check_option_entry("Classification", "models")
         val_assert(self.get("Classification", "models") != "",
                    "Missing value of 'models' option")
         for model in self.get_as_list("Classification", "models"):
+            if model.lower() == "keras":
+                self._validate_keras()
             val_assert(model in self.map_config.options("SupportedModels"),
                        'Model "{}" is not supported'.format(model))
             val_assert(model in self.sections(),
@@ -326,8 +393,8 @@ class ValidConfig(ConfigParser):
             value = self.get_as_list(section, option)
             for i in value:
                 val_assert(i in supported,
-                           'Value "{}" of the option "{}" is not supported.\n'
-                           'Supported values: {}'.format(i, option, ", ".join(map(str, supported))))
+                           f'Value "{i}" of the option "{option}" is not supported.\n'
+                           f'Supported values: \n- {(linesep + "- ").join(map(str, supported))}')
         else:
             value = self.get_primitive(section, option)
             val_assert(value in supported,
@@ -361,9 +428,5 @@ class ValidConfig(ConfigParser):
 if __name__ == '__main__':
     config = ValidConfig()
     config.read(join(dirname(__file__), "../../test/test_settings", "settings.ini"), encoding="cp1251")
-    config.validate_all()
-    # config.validate_dataset()
-    # config.validate_experiment()
-    # config.validate_preprocessing()
-    # config.validate_word_embedding()
-    # config.validate_classification()
+    config._validate_keras()
+    # config.validate_all()

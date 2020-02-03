@@ -75,6 +75,29 @@ def parse_nested_int_list(value: str) -> list:
     return eval(f"[{value}]")
 
 
+def parse_nested_list(val: str, lower=False):
+    res = []
+    outside = True
+    mark = 0
+    open_bracket = 0
+    val = val.replace(" ", "")
+    if lower:
+        val = val.lower()
+    for idx, sym in enumerate(val):
+        if sym == "[":
+            outside = False
+            open_bracket = idx
+        if sym == "," and outside:
+            res.append(val[mark:idx])
+            mark = idx + 1
+        if sym == "]":
+            res.append(parse_nested_list(val[open_bracket+1:idx]))
+            outside = False
+    if (open_bracket == 0) and (mark != len(val) - 1) and len(val) > 0:
+        res.append(val[mark:])
+    return res
+
+
 def str_to_bool(value: str) -> bool:
     if not is_bool(value):
         raise ValueError(f"'{value}' does not represent boolean value")
