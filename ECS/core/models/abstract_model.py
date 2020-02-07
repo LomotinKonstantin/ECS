@@ -3,12 +3,14 @@ from ECS.core.model_tools import load_class
 
 class AbstractModel:
 
-    def __init__(self, classpath: str):
+    def __init__(self, classpath: str = ""):
         """
             :raise ImportError
         """
-        self.class_type = load_class(classpath)
         self.instance = None
+        self.class_type = None
+        if classpath:
+            self.class_type = load_class(classpath)
 
     def load(self, path: str):
         pass
@@ -27,4 +29,3 @@ class AbstractModel:
 
     def refit(self, **kwargs):
         pass
-

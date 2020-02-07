@@ -147,6 +147,9 @@ class ValidConfig(ConfigParser):
         self.__check_option_entry("Experiment", "rubricator")
         self.__check_value("Experiment", "rubricator", ["subj", "ipv", "rgnti"])
 
+    def get_keras_models(self):
+        return parse_nested_list(self.get("keras", "models"), lower=True)
+
     def _validate_keras(self):
         section = "keras"
         self.__check_section_existence(section)
@@ -157,7 +160,7 @@ class ValidConfig(ConfigParser):
             value = self.get(section, key)
             val_assert(value != "", 'Missing value of "{}" option'.format(key))
         try:
-            models = parse_nested_list(self.get("keras", "models"), lower=True)
+            models = self.get_keras_models()
         except Exception as e:
             print(f"Invalid keras models ({e})")
         else:
