@@ -1,4 +1,5 @@
 import os
+import pickle
 
 from ECS.core.data_tools import \
     find_cached_matrices, \
@@ -49,6 +50,15 @@ class Dataset:
         self.test_matrices_cached = False
         self.train_matrices_cached = False
         self.test_file_available = os.path.exists(self.test_file)
+
+        dirname = os.path.dirname(__file__)
+        self.label_binarizers = {}
+        for i in ["subj", "ipv", "rgnti"]:
+            lb_path = os.path.join(dirname, f"{i}_lb.pkl")
+            if not os.path.exists(lb_path):
+                self.logger.error(f"Cannot find LabelBinarizer file for {i}")
+                exit(0)
+            self.label_binarizers[i] = pickle.load(lb_path)
 
         self.test_percent = 0
         if not self.test_file_available:
@@ -216,7 +226,7 @@ class Dataset:
     def get_matrix_md_filter(self):
         return self.matrix_metadata_filter
 
-    def sklearn_dataset_split(self, rubricator: str) -> tuple:
+    def __init_df_in_memory(self):
         if self.train_df is None:
             self.train_df = aggregate_full_dataset_with_pooling(self.train_matrix_generator(),
                                                                 self.pooling)
@@ -224,6 +234,10 @@ class Dataset:
             if self.test_df is None:
                 self.test_df = aggregate_full_dataset_with_pooling(self.test_matrix_generator(),
                                                                    self.pooling)
+
+    def sklearn_dataset_split(self, rubricator: str) -> tuple:
+        self.__init_df_in_memory()
+        if self.test_file_available:
             x_train, y_train = df_to_labeled_dataset(full_df=self.train_df, rubricator=rubricator)
             x_test, y_test = df_to_labeled_dataset(full_df=self.test_df, rubricator=rubricator)
         else:
@@ -295,3 +309,19 @@ class Dataset:
             return self.__infinite_gen_matrix_generator(gen_func=self.train_matrix_generator,
                                                         label_col=rubricator,
                                                         skip_lines=self.train_size)
+
+    # def keras_dataset_split(self, rubricator: str, is_recurrent: bool) -> tuple:
+    #     self.__init_df_in_memory()
+    #     if self.test_file_available:
+    #         x_train, y_train = df_to_labeled_dataset(full_df=self.train_df, rubricator=rubricator)
+    #         x_test, y_test = df_to_labeled_dataset(full_df=self.test_df, rubricator=rubricator)
+    #     else:
+    #         x_train, x_test, y_train, y_test = create_labeled_tt_split(full_df=self.train_df,
+    #                                                                    test_percent=self.test_percent,
+    #                                                                    rubricator=rubricator)
+    #     self.train_size = len(x_train) + len(y_train)
+    #     self.test_size = len(x_test) + len(y_test)
+
+
+if __name__ == '__main__':
+    print(__file__)
