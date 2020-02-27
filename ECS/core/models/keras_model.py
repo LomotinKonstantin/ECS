@@ -4,6 +4,7 @@ from os.path import join, dirname
 from ECS.core.models.abstract_model import AbstractModel
 from ECS.core.model_tools import load_class
 from ECS.interface.validation_tools import is_int, is_float
+from ECS.core.dataset import Dataset
 
 from sklearn.model_selection import GridSearchCV, StratifiedKFold
 
@@ -138,30 +139,30 @@ class KerasModel(AbstractModel):
     def run_grid_search(self, hyperparameters: dict,
                         n_inputs: int,
                         n_outputs: int,
-                        x_train: list,
-                        y_train: list,
+                        dataset: Dataset,
                         n_folds: int,
                         n_jobs: int):
         scoring = 'f1_weighted'
-        model = self.class_mapping["keras_classifier"](build_fn=self.create_model)
-        param_grid = {
-            "layers": list(hyperparameters["models"]),
-            "n_data_features": [n_inputs],
-            "n_outputs": [n_outputs],
-            "loss": list(hyperparameters["loss"]),
-            "optimizer": list(hyperparameters["optimizer"]),
-            "lr": [*[hyperparameters["learning_rate"]]],
-            "epochs": list(hyperparameters["n_epochs"]),
-            # "enable_multiprocessing": [*[hyperparameters["enable_multiprocessing"]]],
-        }
-        skf = StratifiedKFold(shuffle=True, n_splits=n_folds)
-        grid = GridSearchCV(estimator=model,
-                            param_grid=param_grid,
-                            n_jobs=n_jobs,
-                            # scoring=scoring,
-                            # cv=skf,
-                            verbose=0)
-        grid.fit(x_train, y_train)
+        grid = None
+        for model_descr in list(hyperparameters["models"]):
+            param_grid = {
+                "layers": [model_descr],
+                "n_data_features": [n_inputs],
+                "n_outputs": [n_outputs],
+                "loss": list(hyperparameters["loss"]),
+                "optimizer": list(hyperparameters["optimizer"]),
+                "lr": [*[hyperparameters["learning_rate"]]],
+                "epochs": list(hyperparameters["n_epochs"]),
+            }
+            model_wrapper = self.class_mapping["keras_classifier"](build_fn=self.create_model)
+            skf = StratifiedKFold(shuffle=True, n_splits=n_folds)
+            grid = GridSearchCV(estimator=model_wrapper,
+                                param_grid=param_grid,
+                                n_jobs=n_jobs,
+                                # scoring=scoring,
+                                # cv=skf,
+                                verbose=0)
+            grid.fit(x_train, y_train)
         return grid.best_params_
 
 
@@ -175,9 +176,9 @@ if __name__ == '__main__':
         "loss": ["mean_squared_error", "hinge"],
         "n_epochs": [10, 15],
     }
-    x = np.random.rand(100, 10)
+    x = np.random.rand(5, 100, 10)
     # y = np.random.randint(0, 4, (100, 1))
-    y = np.zeros([100, 4])
+    y = np.zeros([5, 100, 4])
     for i in range(len(y)):
         y[i, np.random.randint(0, 4)] = 1
     m = KerasModel()
@@ -190,3 +191,10 @@ if __name__ == '__main__':
     # print(clf.summary())
     # clf.fit(x, y)
     # print(clf.predict(np.random.rand(1, 10)))
+
+"""
+1.  Нужно разделить грид-серч для всех моделей,
+    т.к. надо подбирать форму входных и выходных данных.
+2.  Исправить валидацию кераса. Все гиперпараметры могут
+    быть списками.
+"""

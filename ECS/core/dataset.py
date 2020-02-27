@@ -310,18 +310,15 @@ class Dataset:
                                                         label_col=rubricator,
                                                         skip_lines=self.train_size)
 
-    # def keras_dataset_split(self, rubricator: str, is_recurrent: bool) -> tuple:
-    #     self.__init_df_in_memory()
-    #     if self.test_file_available:
-    #         x_train, y_train = df_to_labeled_dataset(full_df=self.train_df, rubricator=rubricator)
-    #         x_test, y_test = df_to_labeled_dataset(full_df=self.test_df, rubricator=rubricator)
-    #     else:
-    #         x_train, x_test, y_train, y_test = create_labeled_tt_split(full_df=self.train_df,
-    #                                                                    test_percent=self.test_percent,
-    #                                                                    rubricator=rubricator)
-    #     self.train_size = len(x_train) + len(y_train)
-    #     self.test_size = len(x_test) + len(y_test)
-
-
-if __name__ == '__main__':
-    print(__file__)
+    def keras_dataset_split(self, rubricator: str, is_recurrent: bool) -> tuple:
+        self.__init_df_in_memory()
+        if self.test_file_available:
+            x_train, y_train = df_to_labeled_dataset(full_df=self.train_df, rubricator=rubricator)
+            x_test, y_test = df_to_labeled_dataset(full_df=self.test_df, rubricator=rubricator)
+        else:
+            x_train, x_test, y_train, y_test = create_labeled_tt_split(full_df=self.train_df,
+                                                                       test_percent=self.test_percent,
+                                                                       rubricator=rubricator)
+        self.train_size = len(x_train) + len(y_train)
+        self.test_size = len(x_test) + len(y_test)
+        
