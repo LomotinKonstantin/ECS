@@ -24,7 +24,6 @@ from ECS.interface.valid_config import ValidConfig
 
 
 class Dataset:
-
     DATA_COL = "features"
 
     def __init__(self, config: ValidConfig):
@@ -259,14 +258,10 @@ class Dataset:
                 self.test_size = int(samples_in_train_file * self.test_percent)
                 self.train_size = samples_in_train_file - self.test_size
 
-    def __infinite_row_df_generator(self, df, label_col: str, from_idx=0, to_idx=None):
-        while True:
-            for idx in df.index[from_idx:to_idx]:
-                matr = df.loc[idx, self.DATA_COL]
-                label = df.loc[idx, label_col]
-                yield matr, label
-
-    def __infinite_gen_matrix_generator(self, gen_func, label_col: str, skip_lines=0, to_idx=None):
+    def __matrix_generator(self, gen_func, label_col: str, n_epochs: int, skip_lines=0,
+                           to_idx=None, infinite=False):
+        lab_bin = self.label_binarizers[label_col]
+        epoch = 0
         while True:
             cur_idx = 0
             gen = gen_func(chunk_size=1)
@@ -278,10 +273,15 @@ class Dataset:
                 row = chunk.index[0]
                 matr = chunk.loc[row, self.DATA_COL]
                 label = chunk.loc[row, label_col]
-                yield matr, label
+                oh_vector = lab_bin.transform([label])[0]
+                yield matr, oh_vector
                 cur_idx += 1
+            if not infinite:
+                epoch += 1
+                if epoch >= n_epochs:
+                    break
 
-    def keras_infinite_train_generator(self, rubricator: str):
+    def keras_train_matrix_generator(self, rubricator: str, n_epochs: int):
         """
         Генератор обучающих пар. Умеет использовать данные, уже загруженные в память
         :return: генератор возвращает пары (матрица, метка_класса) по одному сэмплу,
@@ -289,36 +289,23 @@ class Dataset:
         """
         self.__init_sizes()
         if self.test_file_available:
-            return self.__infinite_gen_matrix_generator(gen_func=self.train_matrix_generator,
-                                                        label_col=rubricator)
+            return self.__matrix_generator(gen_func=self.train_matrix_generator,
+                                           label_col=rubricator, n_epochs=n_epochs)
         else:
             last_idx = self.train_size - 1
-            return self.__infinite_gen_matrix_generator(gen_func=self.train_matrix_generator,
-                                                        label_col=rubricator, to_idx=last_idx)
+            return self.__matrix_generator(gen_func=self.train_matrix_generator,
+                                           label_col=rubricator, to_idx=last_idx, n_epochs=n_epochs)
 
-    def keras_test_generator(self, rubricator: str):
+    def keras_test_matrix_generator(self, rubricator: str):
         """
         :return: генератор возвращает пары (матрица, метка_класса) по одному сэмплу,
                  так как в матрицах разное количество строк, и они не стакаются
         """
         self.__init_sizes()
         if self.test_file_available:
-            return self.__infinite_gen_matrix_generator(gen_func=self.test_matrix_generator,
-                                                        label_col=rubricator)
+            return self.__matrix_generator(gen_func=self.test_matrix_generator,
+                                           label_col=rubricator, n_epochs=1)
         else:
-            return self.__infinite_gen_matrix_generator(gen_func=self.train_matrix_generator,
-                                                        label_col=rubricator,
-                                                        skip_lines=self.train_size)
-
-    def keras_dataset_split(self, rubricator: str, is_recurrent: bool) -> tuple:
-        self.__init_df_in_memory()
-        if self.test_file_available:
-            x_train, y_train = df_to_labeled_dataset(full_df=self.train_df, rubricator=rubricator)
-            x_test, y_test = df_to_labeled_dataset(full_df=self.test_df, rubricator=rubricator)
-        else:
-            x_train, x_test, y_train, y_test = create_labeled_tt_split(full_df=self.train_df,
-                                                                       test_percent=self.test_percent,
-                                                                       rubricator=rubricator)
-        self.train_size = len(x_train) + len(y_train)
-        self.test_size = len(x_test) + len(y_test)
-        
+            return self.__matrix_generator(gen_func=self.train_matrix_generator,
+                                           label_col=rubricator,
+                                           skip_lines=self.train_size, n_epochs=1)
