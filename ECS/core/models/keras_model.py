@@ -1,12 +1,15 @@
 from configparser import ConfigParser
 from os.path import join, dirname
+import logging
 
 from ECS.core.models.abstract_model import AbstractModel
 from ECS.core.model_tools import load_class
 from ECS.interface.validation_tools import is_int, is_float
+from ECS.core.data_tools import apply_pooling
 from ECS.core.dataset import Dataset
 
-from sklearn.model_selection import GridSearchCV, StratifiedKFold
+from sklearn.model_selection import GridSearchCV, StratifiedKFold, ParameterGrid
+from sklearn.metrics import f1_score
 
 
 class KerasModel(AbstractModel):
@@ -21,6 +24,7 @@ class KerasModel(AbstractModel):
         """
         super().__init__()
         self._init_mappings()
+        self.logger = logging.getLogger("Keras Model")
 
     def _init_mappings(self):
         if self.class_mapping is None:
@@ -86,7 +90,7 @@ class KerasModel(AbstractModel):
         layer_class = self.class_mapping[layer_name]
         settings = self._create_settings_dict(parsed)
         if layer_name != "dropout":
-            if KerasModel._is_recurrent(layer_name):
+            if self._is_recurrent(layer_name):
                 settings["return_sequences"] = True
             if first:
                 if is_rnn_network:
@@ -97,7 +101,7 @@ class KerasModel(AbstractModel):
                     # Батчи векторов
                     settings["input_shape"] = (n_features,)
             if last:
-                if KerasModel._is_recurrent(layer_name):
+                if self._is_recurrent(layer_name):
                     settings["return_sequences"] = False
                 settings["units"] = n_outputs
         new_layer = layer_class(**settings)
@@ -105,15 +109,15 @@ class KerasModel(AbstractModel):
             new_layer = self.class_mapping["time_distributed"](new_layer)
         return new_layer
 
-    def _build_from_layers(self, layers: list, n_features: int, n_outputs: int):
+    def _build_from_layers(self, layers: list, n_features: int, n_outputs: int) -> tuple:
         Sequential = self.class_mapping["sequential"]
         instance = Sequential()
         parsed_layers = []
         rnn_present = False
         # Парсим сеть, проверяем наличие рекуррентных слоев
         for idx, layer_desc in enumerate(layers):
-            parsed = KerasModel._parse_layer(layer_desc, last=(idx == len(layers) - 1))
-            if KerasModel._is_recurrent(parsed["layer_name"]):
+            parsed = self._parse_layer(layer_desc, last=(idx == len(layers) - 1))
+            if self._is_recurrent(parsed["layer_name"]):
                 rnn_present = True
             parsed_layers.append(parsed)
         # Настраиваем параметры, создаем слои и модель
@@ -125,27 +129,79 @@ class KerasModel(AbstractModel):
                                            is_rnn_network=rnn_present,
                                            n_features=n_features, n_outputs=n_outputs)
             instance.add(new_layer)
-        return instance
+        return instance, rnn_present
 
     def create_model(self, layers: list, n_data_features: int, n_outputs: int,
                      loss: str, optimizer: str, lr: float):
-        instance = self._build_from_layers(layers=layers,
-                                           n_features=n_data_features,
-                                           n_outputs=n_outputs)
+        instance, is_recurrent = self._build_from_layers(layers=layers,
+                                                         n_features=n_data_features,
+                                                         n_outputs=n_outputs)
         optimizer = self.opt_mapping[optimizer](lr=lr)
         instance.compile(loss=loss, optimizer=optimizer, metrics=["accuracy"])
-        return instance
+        return instance, is_recurrent
+
+    @staticmethod
+    def data_transformer(matrices, labels,
+                         is_recurrent: bool,
+                         pooling_type: str,
+                         dataset: Dataset,
+                         rubricator: str,
+                         n_epochs: int):
+        for _ in range(n_epochs):
+            if is_recurrent:
+                matrices = map(lambda matr: apply_pooling(matr, pooling_type), matrices)
+            labels = map(lambda lab: dataset.oh_encode(lab, rubricator), labels)
+            for matrix, label in zip(matrices, labels):
+                yield matrix, labels
+
+    def evaluate_model(self, model, x_test, y_test, dataset: Dataset,
+                       pooling_type: str, rubricator: str, is_recurrent: bool):
+        data_gen = self.data_transformer(x_test, y_test,
+                                         is_recurrent=is_recurrent,
+                                         pooling_type=pooling_type,
+                                         dataset=dataset,
+                                         rubricator=rubricator,
+                                         n_epochs=1)
+        y_true = []
+        y_pred = []
+        for tensor, label_vec in data_gen:
+            y_true.append(dataset.oh_decode(label_vec, rubricator))
+            prediction = model.predict(tensor)
+            y_pred.append(dataset.oh_decode(prediction, rubricator))
+
+        return f1_score(y_true, y_pred)
 
     def run_grid_search(self, hyperparameters: dict,
                         n_inputs: int,
                         n_outputs: int,
-                        dataset: Dataset,
+                        x_train, y_train,
                         n_folds: int,
-                        n_jobs: int):
-        scoring = 'f1_weighted'
-        grid = None
+                        n_jobs: int,
+                        **kwargs) -> dict:
+        """
+
+        :param hyperparameters:
+        :param n_inputs:
+        :param n_outputs:
+        :param x_train:
+        :param y_train:
+        :param n_folds:
+        :param n_jobs:
+        :param kwargs: Должен содержать поля conv_type, dataset и rubricator
+        :return:
+        """
+        scoring = "f1_weighted"
+        conv_type = kwargs["conv_type"]
+        # TODO: Костыль. Надо либо передавать dataset, либо выборки
+        dataset = kwargs["dataset"]
+        rubricator = kwargs["dataset"]
+        x_test = kwargs["x_test"]
+        y_test = kwargs["y_test"]
+        steps_per_epoch = len(y_train)
+        best_score = -1
+        best_params = {}
         for model_descr in list(hyperparameters["models"]):
-            param_grid = {
+            param_dict = {
                 "layers": [model_descr],
                 "n_data_features": [n_inputs],
                 "n_outputs": [n_outputs],
@@ -154,20 +210,38 @@ class KerasModel(AbstractModel):
                 "lr": [*[hyperparameters["learning_rate"]]],
                 "epochs": list(hyperparameters["n_epochs"]),
             }
-            model_wrapper = self.class_mapping["keras_classifier"](build_fn=self.create_model)
-            skf = StratifiedKFold(shuffle=True, n_splits=n_folds)
-            grid = GridSearchCV(estimator=model_wrapper,
-                                param_grid=param_grid,
-                                n_jobs=n_jobs,
-                                # scoring=scoring,
-                                # cv=skf,
-                                verbose=0)
-            grid.fit(x_train, y_train)
-        return grid.best_params_
+            param_grid = ParameterGrid(param_dict)
+            for param_combination in param_grid:  # type: dict
+                epochs = param_combination.pop("epochs")
+                estimator, is_recurrent = self.create_model(**param_combination)
+                for n_epochs in epochs:
+                    train_gen = self.data_transformer(x_train, y_train,
+                                                      is_recurrent=is_recurrent,
+                                                      pooling_type=conv_type,
+                                                      dataset=dataset,
+                                                      rubricator=rubricator,
+                                                      n_epochs=n_epochs)
+                    estimator.fit_generator(train_gen,
+                                            steps_per_epoch=steps_per_epoch,
+                                            epochs=n_epochs)
+                    score = self.evaluate_model(estimator, x_test, y_test,
+                                                dataset=dataset,
+                                                pooling_type=conv_type,
+                                                rubricator=rubricator,
+                                                is_recurrent=is_recurrent)
+                    if score > best_score:
+                        best_params = param_combination
+                        best_params["epochs"] = n_epochs
+                        best_score = score
+                    dict_str = "\n".join([f"{k}: {v}" for k, v in param_combination.items()])
+                    log_msg = f"F1 score for \n{dict_str}\nwith {n_epochs} epochs: {round(score, 5)}"
+                    self.logger.info(log_msg)
+        return best_params
 
 
 if __name__ == '__main__':
     import numpy as np
+
     hypers = {
         # "models": [["dense"], ["lstm_5", "dropout_0.4", "dense_tanh"]],
         "models": [["dense_20", "dropout_0.3", "dense"]],
@@ -197,4 +271,21 @@ if __name__ == '__main__':
     т.к. надо подбирать форму входных и выходных данных.
 2.  Исправить валидацию кераса. Все гиперпараметры могут
     быть списками.
+    
+    Почему dataset:
+        1. Для каждой модели нужна своя форма данных - матрицы или векторы
+    Почему x_train, y_train: 
+        1. Юниформность
+        2. Уже реализован фильтр маленьких рубрик. Для генератора это сделать сложно.
+        3. GridSearch не умеет фитить генераторы
+        
+    Компромисс:
+        1. Ручной грид серч на генераторах и костылях
+        2. Генераторы на отфильтрованных x_train, y_train - применяют пулинг, делают форму
+        
+        * Сохраняется единый интерфейс
+        * Полиморфно создается правильный источник данных
+        * Данные уже отфильтрованы
+        
+    Как использовать Dataset в *Model?
 """

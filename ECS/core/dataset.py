@@ -1,6 +1,9 @@
 import os
 import pickle
 
+from sklearn.preprocessing import LabelBinarizer
+import numpy as np
+
 from ECS.core.data_tools import \
     find_cached_matrices, \
     load_w2v, \
@@ -309,3 +312,14 @@ class Dataset:
             return self.__matrix_generator(gen_func=self.train_matrix_generator,
                                            label_col=rubricator,
                                            skip_lines=self.train_size, n_epochs=1)
+
+    def oh_encode(self, label: str, rubricator: str):
+        lb = self.label_binarizers[rubricator]      # type: LabelBinarizer
+        if label not in lb.classes_:
+            self.logger.warning(f"Label '{label}' not in '{rubricator}' topics! "
+                                f"It will result in a zero vector")
+        return lb.transform([label])[0]
+
+    def oh_decode(self, vector, rubricator: str):
+        lb = self.label_binarizers[rubricator]      # type: LabelBinarizer
+        return lb.inverse_transform(np.array([vector]), threshold=0.5)[0]

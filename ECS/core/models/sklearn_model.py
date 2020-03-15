@@ -60,7 +60,9 @@ class SklearnModel(AbstractModel):
                         y_train: list,
                         binary: bool,
                         n_folds: int,
-                        n_jobs: int) -> dict:
+                        n_jobs: int,
+                        # Для совместимости интерфейса с KerasModel
+                        **kwargs) -> dict:
         """
         Запустить поиск по сетке параметров для модели для поиска лучшей комбинации,
         чтобы затем обучить ее на полной выборке без CV

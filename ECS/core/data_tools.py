@@ -174,7 +174,7 @@ def apply_pooling(matrix: np.ndarray, pooling: str) -> np.ndarray:
     elif pooling == "mean":
         return matrix.mean(axis=0)
     elif pooling == "max":
-        return matrix.max(axis=0)
+        return matrix.max(axis=0, initial=-100.)
 
 
 def vectorize_text(text: str, w2v_model: Word2Vec, conv_type: str) -> np.ndarray:
