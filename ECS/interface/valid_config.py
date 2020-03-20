@@ -154,11 +154,13 @@ class ValidConfig(ConfigParser):
         section = "keras"
         self.__check_section_existence(section)
         options = ("models", "optimizer", "learning_rate",
-                   "loss", "n_epochs", "enable_multiprocessing")
+                   "loss", "n_epochs")
         for key in options:
             self.__check_option_entry(section, key)
             value = self.get(section, key)
-            val_assert(value != "", 'Missing value of "{}" option'.format(key))
+            val_assert(value != "", f"Missing value of '{key}' option")
+            if key != "models":
+                val_assert(is_plain_sequence(value), f"Value of '{key}' must be a plain sequence")
         try:
             models = self.get_keras_models()
         except Exception as e:
@@ -213,11 +215,9 @@ class ValidConfig(ConfigParser):
                    "Learning rate must be a positive float")
         supported_losses = parse_plain_sequence(self.map_config.get("Supported", "losses"))
         self.__check_value(section, "loss", supported_losses, multiple_values=True)
-        n_epochs = self.get_primitive(section, "n_epochs")
-        val_assert(is_int(n_epochs) and int(n_epochs) > 0,
+        n_epochs = self.get_as_list(section, "n_epochs")
+        val_assert(all(map(lambda x: is_int(x) and int(x) > 0, n_epochs)) > 0,
                    "Number of epochs must be a positive integer")
-        self.__check_value(section, "enable_multiprocessing", [True, False, 0, 1],
-                           multiple_values=False)
 
     def validate_classification(self):
         self.__check_section_existence("Classification")
@@ -242,6 +242,8 @@ class ValidConfig(ConfigParser):
                 instance = m()
                 params = instance.get_params()
                 for hp in self.options(model):
+                    if hp in ("c",):
+                        hp = hp.capitalize()
                     val_assert(hp in params.keys(),
                                'Model "{}" has no hyperparameter "{}". {}'
                                'Possible hyperparameters: {}'.format(model,
