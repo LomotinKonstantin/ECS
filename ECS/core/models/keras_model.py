@@ -11,6 +11,7 @@ from ECS.core.dataset import Dataset
 from sklearn.model_selection import ParameterGrid
 from sklearn.metrics import f1_score
 import numpy as np
+from keras.utils import print_summary
 
 
 class KerasModel(AbstractModel):
@@ -26,6 +27,7 @@ class KerasModel(AbstractModel):
         super().__init__()
         self._init_mappings()
         self.logger = logging.getLogger("Keras Model")
+        self.logger.setLevel(logging.INFO)
         self.instance = None
 
     def _init_mappings(self):
@@ -201,7 +203,8 @@ class KerasModel(AbstractModel):
             epochs = param_dict.pop("epochs")
             for param_combination in param_grid:  # type: dict
                 estimator, is_recurrent = self.create_model(**param_combination)
-                self.logger.info(estimator.summary())
+                self.instance = estimator
+                print_summary(estimator, print_fn=self.logger.info)
                 for n_epochs in epochs:
                     train_gen = self.data_transformer(x_train, y_train,
                                                       is_recurrent=is_recurrent,
@@ -249,7 +252,7 @@ class KerasModel(AbstractModel):
 
 
 if __name__ == '__main__':
-    import numpy as np
+    # import numpy as np
 
     hypers = {
         "models": [["dense"], ["lstm_5", "dropout_0.4", "dense_tanh"]],
