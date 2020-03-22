@@ -58,9 +58,6 @@ class SklearnModel(AbstractModel):
                         hyperparameters: dict,
                         x_train: list,
                         y_train: list,
-                        binary: bool,
-                        n_folds: int,
-                        n_jobs: int,
                         # Для совместимости интерфейса с KerasModel
                         **kwargs) -> dict:
         """
@@ -76,6 +73,9 @@ class SklearnModel(AbstractModel):
         :param n_jobs: количество параллельных потоков
         :return: словарь лучших параметров в совместимом формате
         """
+        binary = kwargs["binary"]
+        n_folds = kwargs["n_folds"]
+        n_jobs = kwargs["n_jobs"]
         scoring = 'f1_weighted'
         skf = StratifiedKFold(shuffle=True, n_splits=n_folds)
         hypers_copy = hyperparameters.copy()

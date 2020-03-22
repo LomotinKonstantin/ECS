@@ -14,6 +14,7 @@ from ECS.interface.valid_config import ValidConfig
 from ECS.interface.logging_tools import create_logger, error_ps
 from ECS.core.dataset import Dataset
 from ECS.core.models.sklearn_model import SklearnModel
+from ECS.core.models.keras_model import KerasModel
 from ECS.core.data_tools import \
     generate_w2v_fname, \
     timestamp
@@ -194,7 +195,10 @@ def main():
             if model_name == "svm":
                 hypers["probability"] = [True]
             try:
-                model_interface = SklearnModel(model_import_mapping[model_name])
+                if model_name == "keras":
+                    model_interface = KerasModel()
+                else:
+                    model_interface = SklearnModel(model_import_mapping[model_name])
             except ImportError as ie:
                 logger.warning(f"\n>>> Unable to create model {model_name}, it will be skipped.")
                 logger.warning(f">>> ({ie})\n")
@@ -202,12 +206,24 @@ def main():
             logger.info(f"Fitting parameters for model {model_name} by {rubricator}")
             timer = time()
             try:
+                n_outputs = len(dataset.label_binarizers[rubricator].classes_)
+                n_inputs = x_train[0].size
+                grid_search_params = {
+                    "binary": binary,
+                    "n_folds": n_folds,
+                    "n_jobs": n_jobs,
+                    "dataset": dataset,
+                    "n_inputs": n_inputs,
+                    "n_outputs": n_outputs,
+                    "rubricator": rubricator,
+                    "conv_type": pooling,
+                    "x_test": x_test,
+                    "y_test": y_test,
+                }
                 best_params = model_interface.run_grid_search(hyperparameters=hypers,
                                                               x_train=x_train,
                                                               y_train=y_train,
-                                                              binary=binary,
-                                                              n_folds=n_folds,
-                                                              n_jobs=n_jobs)
+                                                              **grid_search_params)
             except ValueError as ve:
                 logger.warning(f"\n>>> Detected incorrect hyperparameters ({ve}) for model '{model_name}'."
                                f"It will be skipped.")

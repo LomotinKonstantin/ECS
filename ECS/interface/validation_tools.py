@@ -88,13 +88,13 @@ def parse_nested_list(val: str, lower=False):
             outside = False
             open_bracket = idx
         if sym == "," and outside:
-            res.append(val[mark:idx])
+            res.append(parse_primitive(val[mark:idx]))
             mark = idx + 1
         if sym == "]":
             res.append(parse_nested_list(val[open_bracket+1:idx]))
             outside = False
     if (open_bracket == 0) and (mark != len(val) - 1) and len(val) > 0:
-        res.append(val[mark:])
+        res.append(parse_primitive(val[mark:]))
     return res
 
 

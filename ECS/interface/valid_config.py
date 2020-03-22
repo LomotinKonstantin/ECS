@@ -32,12 +32,7 @@ class ValidConfig(ConfigParser):
 
     def get_as_list(self, section, key) -> list:
         value = self.get(section, key)
-        if is_plain_sequence(value):
-            return parse_plain_sequence(value)
-        elif is_nested_int_list(value):
-            return parse_nested_int_list(value)
-        else:
-            return [parse_primitive(value)]
+        return parse_nested_list(value)
 
     def get_primitive(self, section: str, option: str, fallback=""):
         value = self.get(section, option, fallback=fallback)
@@ -239,6 +234,8 @@ class ValidConfig(ConfigParser):
                 m = load_class(path)
                 val_assert(m is not None,
                            "Module {} cannot be loaded. Please check installed packages".format(path))
+                if model == "keras":
+                    continue
                 instance = m()
                 params = instance.get_params()
                 for hp in self.options(model):
@@ -412,7 +409,7 @@ class ValidConfig(ConfigParser):
             hp_list = self.get_as_list(model, option)
             if hp_list[0] == "":
                 continue
-            hypers[option] = self.get_as_list(model, option)
+            hypers[option] = hp_list
         return hypers
 
     def get_as_dict(self, section: str) -> dict:
@@ -433,5 +430,5 @@ class ValidConfig(ConfigParser):
 if __name__ == '__main__':
     config = ValidConfig()
     config.read(join(dirname(__file__), "../../test/test_settings", "settings.ini"), encoding="cp1251")
-    config._validate_keras()
-    # config.validate_all()
+    # config._validate_keras()
+    config.validate_all()

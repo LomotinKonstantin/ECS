@@ -8,8 +8,9 @@ from ECS.interface.validation_tools import is_int, is_float
 from ECS.core.data_tools import apply_pooling
 from ECS.core.dataset import Dataset
 
-from sklearn.model_selection import GridSearchCV, StratifiedKFold, ParameterGrid
+from sklearn.model_selection import ParameterGrid
 from sklearn.metrics import f1_score
+import numpy as np
 
 
 class KerasModel(AbstractModel):
@@ -25,6 +26,7 @@ class KerasModel(AbstractModel):
         super().__init__()
         self._init_mappings()
         self.logger = logging.getLogger("Keras Model")
+        self.instance = None
 
     def _init_mappings(self):
         if self.class_mapping is None:
@@ -51,6 +53,7 @@ class KerasModel(AbstractModel):
         else:
             out_type = int
         if len(parts) == 3:
+            # Если слой описан полностью
             res["output_size"] = out_type(parts[1])
             res["activation"] = parts[2]
         elif len(parts) == 2:
@@ -152,7 +155,7 @@ class KerasModel(AbstractModel):
                 matrices = map(lambda matr: apply_pooling(matr, pooling_type), matrices)
             labels = map(lambda lab: dataset.oh_encode(lab, rubricator), labels)
             for matrix, label in zip(matrices, labels):
-                yield matrix, labels
+                yield np.reshape(matrix, (1, -1)), np.reshape(label, (1, -1))
 
     def evaluate_model(self, model, x_test, y_test, dataset: Dataset,
                        pooling_type: str, rubricator: str, is_recurrent: bool):
@@ -165,38 +168,22 @@ class KerasModel(AbstractModel):
         y_true = []
         y_pred = []
         for tensor, label_vec in data_gen:
-            y_true.append(dataset.oh_decode(label_vec, rubricator))
-            prediction = model.predict(tensor)
+            y_true.append(dataset.oh_decode(label_vec[0], rubricator))
+            prediction = model.predict(tensor)[0]
             y_pred.append(dataset.oh_decode(prediction, rubricator))
-
-        return f1_score(y_true, y_pred)
+        return f1_score(y_true, y_pred, average="weighted")
 
     def run_grid_search(self, hyperparameters: dict,
-                        n_inputs: int,
-                        n_outputs: int,
                         x_train, y_train,
-                        n_folds: int,
-                        n_jobs: int,
                         **kwargs) -> dict:
-        """
-
-        :param hyperparameters:
-        :param n_inputs:
-        :param n_outputs:
-        :param x_train:
-        :param y_train:
-        :param n_folds:
-        :param n_jobs:
-        :param kwargs: Должен содержать поля conv_type, dataset и rubricator
-        :return:
-        """
-        scoring = "f1_weighted"
         conv_type = kwargs["conv_type"]
         # TODO: Костыль. Надо либо передавать dataset, либо выборки
         dataset = kwargs["dataset"]
-        rubricator = kwargs["dataset"]
+        rubricator = kwargs["rubricator"]
         x_test = kwargs["x_test"]
         y_test = kwargs["y_test"]
+        n_inputs = kwargs["n_inputs"]
+        n_outputs = kwargs["n_outputs"]
         steps_per_epoch = len(y_train)
         best_score = -1
         best_params = {}
@@ -211,9 +198,10 @@ class KerasModel(AbstractModel):
                 "epochs": list(hyperparameters["n_epochs"]),
             }
             param_grid = ParameterGrid(param_dict)
+            epochs = param_dict.pop("epochs")
             for param_combination in param_grid:  # type: dict
-                epochs = param_combination.pop("epochs")
                 estimator, is_recurrent = self.create_model(**param_combination)
+                self.logger.info(estimator.summary())
                 for n_epochs in epochs:
                     train_gen = self.data_transformer(x_train, y_train,
                                                       is_recurrent=is_recurrent,
@@ -238,15 +226,36 @@ class KerasModel(AbstractModel):
                     self.logger.info(log_msg)
         return best_params
 
+    def refit(self, **kwargs):
+        best_params = kwargs["best_params"]
+        x_train = kwargs["x_train"]
+        y_train = kwargs["y_train"]
+        conv_type = kwargs["conv_type"]
+        dataset = kwargs["dataset"]
+        rubricator = kwargs["rubricator"]
+        n_epochs = best_params.pop("epochs")
+        estimator, is_recurrent = self.create_model(**best_params)
+        steps_per_epoch = len(y_train)
+        train_gen = self.data_transformer(x_train, y_train,
+                                          is_recurrent=is_recurrent,
+                                          pooling_type=conv_type,
+                                          dataset=dataset,
+                                          rubricator=rubricator,
+                                          n_epochs=n_epochs)
+        estimator.fit_generator(train_gen,
+                                steps_per_epoch=steps_per_epoch,
+                                epochs=n_epochs)
+        self.instance = estimator
+
 
 if __name__ == '__main__':
     import numpy as np
 
     hypers = {
-        # "models": [["dense"], ["lstm_5", "dropout_0.4", "dense_tanh"]],
-        "models": [["dense_20", "dropout_0.3", "dense"]],
+        "models": [["dense"], ["lstm_5", "dropout_0.4", "dense_tanh"]],
+        # "models": [["dense_20", "dropout_0.3", "dense"]],
         "optimizer": ["adam", "rmsprop"],
-        "learning_rate": 0.01,
+        "learning_rate": [0.01],
         "loss": ["mean_squared_error", "hinge"],
         "n_epochs": [10, 15],
     }
@@ -257,7 +266,8 @@ if __name__ == '__main__':
         y[i, np.random.randint(0, 4)] = 1
     m = KerasModel()
     bp = m.run_grid_search(hyperparameters=hypers, n_folds=5,
-                           n_inputs=10, n_outputs=4, n_jobs=2, x_train=x, y_train=y)
+                           n_inputs=10, n_outputs=4, n_jobs=2,
+                           x_train=x, y_train=y)
     print(bp)
     # clf = m.create_model(layers=["dense_20", "dropout_0.3", "dense"],
     #                      n_data_features=10, n_outputs=4, loss="mean_squared_error",

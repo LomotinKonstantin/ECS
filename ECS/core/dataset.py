@@ -60,7 +60,7 @@ class Dataset:
             if not os.path.exists(lb_path):
                 self.logger.error(f"Cannot find LabelBinarizer file for {i}")
                 exit(0)
-            self.label_binarizers[i] = pickle.load(lb_path)
+            self.label_binarizers[i] = pickle.load(open(lb_path, "rb"))
 
         self.test_percent = 0
         if not self.test_file_available:
