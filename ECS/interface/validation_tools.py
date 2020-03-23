@@ -37,10 +37,22 @@ def is_plain_sequence(value: str) -> bool:
     return any(list(map(lambda x: len(x.strip()) > 0, value.split(","))))
 
 
+def is_nested_list(value: str) -> bool:
+    if "[" not in value or "[" not in value:
+        return False
+    bracket_stack = 0
+    for sym in value:
+        if sym == "[":
+            bracket_stack += 1
+        elif sym == "]":
+            bracket_stack -= 1
+            if bracket_stack < 0:
+                return False
+    return bracket_stack == 0
+
+
 def is_nested_int_list(value: str) -> bool:
-    op_br = value.count("[")
-    cl_br = value.count("]")
-    if (op_br * cl_br == 0) or (op_br != cl_br):
+    if not is_nested_list(value):
         return False
     return all(map(is_int, value.replace("[", "").replace("]", "").split(",")))
 
@@ -78,6 +90,8 @@ def parse_nested_int_list(value: str) -> list:
 def parse_nested_list(val: str, lower=False):
     if val == "":
         return [[""]]
+    if lower:
+        val = val.lower()
     list_val = list(val)
     idx = 0
     obj_found = False
@@ -96,7 +110,17 @@ def parse_nested_list(val: str, lower=False):
         idx += 1
     if obj_found:
         list_val.append('"')
-    return eval("".join(list_val))
+    return [eval("".join(list_val))]
+
+
+def parse_sequence(value: str):
+    if is_plain_sequence(value):
+        return parse_plain_sequence(value)
+    if is_nested_int_list(value):
+        return parse_nested_int_list(value)
+    if is_nested_list(value):
+        return parse_nested_list(value)
+    raise ValueError(f"Not a sequence: {value}")
 
 
 def str_to_bool(value: str) -> bool:

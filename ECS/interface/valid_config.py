@@ -22,6 +22,8 @@ class ValidConfig(ConfigParser):
             В таких списках не ожидается символов [].
         4. Вложенные списки целых чисел (структура нейросети)
             Пример: [3], [1, 2, 3], [15, 15]
+        5. Вложенные списки строк (структура нейросети keras)
+            Пример: [dense_tanh], [lstm_10, dropout_0.2, dense]
     """
     LIST_DELIM = ","
 
@@ -32,7 +34,7 @@ class ValidConfig(ConfigParser):
 
     def get_as_list(self, section, key) -> list:
         value = self.get(section, key)
-        return parse_nested_list(value)
+        return parse_sequence(value)
 
     def get_primitive(self, section: str, option: str, fallback=""):
         value = self.get(section, option, fallback=fallback)
