@@ -76,26 +76,27 @@ def parse_nested_int_list(value: str) -> list:
 
 
 def parse_nested_list(val: str, lower=False):
-    res = []
-    outside = True
-    mark = 0
-    open_bracket = 0
-    val = val.replace(" ", "")
-    if lower:
-        val = val.lower()
-    for idx, sym in enumerate(val):
-        if sym == "[":
-            outside = False
-            open_bracket = idx
-        if sym == "," and outside:
-            res.append(parse_primitive(val[mark:idx]))
-            mark = idx + 1
-        if sym == "]":
-            res.append(parse_nested_list(val[open_bracket+1:idx]))
-            outside = False
-    if (open_bracket == 0) and (mark != len(val) - 1) and len(val) > 0:
-        res.append(parse_primitive(val[mark:]))
-    return res
+    if val == "":
+        return [[""]]
+    list_val = list(val)
+    idx = 0
+    obj_found = False
+    while idx < len(list_val):
+        sym = list_val[idx]
+        if sym not in "[], ":
+            if not obj_found:
+                list_val.insert(idx, '"')
+                idx += 1
+                obj_found = True
+        else:
+            if obj_found:
+                list_val.insert(idx, '"')
+                idx += 1
+                obj_found = False
+        idx += 1
+    if obj_found:
+        list_val.append('"')
+    return eval("".join(list_val))
 
 
 def str_to_bool(value: str) -> bool:
