@@ -288,7 +288,7 @@ class ValidConfig(ConfigParser):
                 Normalizer(norm, lang)
             except ValueError:
                 val_logger.info("\n" + lang_norm_hint(lang, norm))
-                exit()
+                exit(0)
         #
         val_assert(is_int(batch_size) and int(batch_size) > 0,
                    f"Invalid value of 'batch_size': {batch_size}\n"

@@ -227,7 +227,6 @@ def main():
             except ValueError as ve:
                 logger.warning(f"\n>>> Detected incorrect hyperparameters ({ve}) for model '{model_name}'."
                                f"It will be skipped.")
-                raise ve
                 continue
             except OSError as ose:
                 state_str = f"(model: {model_name}, rubricator: {rubricator})"

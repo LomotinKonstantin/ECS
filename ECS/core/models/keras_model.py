@@ -152,12 +152,18 @@ class KerasModel(AbstractModel):
                          dataset: Dataset,
                          rubricator: str,
                          n_epochs: int):
-        for _ in range(n_epochs):
+        epoch = 0
+        while True:
+            x_data = matrices
             if is_recurrent:
-                matrices = map(lambda matr: apply_pooling(matr, pooling_type), matrices)
-            labels = map(lambda lab: dataset.oh_encode(lab, rubricator), labels)
-            for matrix, label in zip(matrices, labels):
+                x_data = map(lambda matr: apply_pooling(matr, pooling_type), matrices)
+            y_data = map(lambda lab: dataset.oh_encode(lab, rubricator), labels)
+            for matrix, label in zip(x_data, y_data):
                 yield np.reshape(matrix, (1, -1)), np.reshape(label, (1, -1))
+            if n_epochs > 0:
+                epoch += 1
+                if epoch == n_epochs:
+                    return
 
     def evaluate_model(self, model, x_test, y_test, dataset: Dataset,
                        pooling_type: str, rubricator: str, is_recurrent: bool):
@@ -196,7 +202,7 @@ class KerasModel(AbstractModel):
                 "n_outputs": [n_outputs],
                 "loss": list(hyperparameters["loss"]),
                 "optimizer": list(hyperparameters["optimizer"]),
-                "lr": [*[hyperparameters["learning_rate"]]],
+                "lr": hyperparameters["learning_rate"],
                 "epochs": list(hyperparameters["n_epochs"]),
             }
             param_grid = ParameterGrid(param_dict)
@@ -211,7 +217,7 @@ class KerasModel(AbstractModel):
                                                       pooling_type=conv_type,
                                                       dataset=dataset,
                                                       rubricator=rubricator,
-                                                      n_epochs=n_epochs)
+                                                      n_epochs=-1)
                     estimator.fit_generator(train_gen,
                                             steps_per_epoch=steps_per_epoch,
                                             epochs=n_epochs)
@@ -225,7 +231,7 @@ class KerasModel(AbstractModel):
                         best_params["epochs"] = n_epochs
                         best_score = score
                     dict_str = "\n".join([f"{k}: {v}" for k, v in param_combination.items()])
-                    log_msg = f"F1 score for \n{dict_str}\nwith {n_epochs} epochs: {round(score, 5)}"
+                    log_msg = f"\nF1 score for \n{dict_str}\nwith {n_epochs} epochs: {round(score, 5)}"
                     self.logger.info(log_msg)
         return best_params
 
