@@ -47,7 +47,8 @@ class SklearnModel(AbstractModel):
         return model, metadata
 
     def refit(self, best_params: dict, x_train: list,
-              y_train: list, binary: bool) -> None:
+              y_train: list, **kwargs) -> None:
+        binary = kwargs["binary"]
         self.instance = self.class_type()
         if binary:
             self.instance = OneVsRestClassifier(self.instance)

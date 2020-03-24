@@ -12,6 +12,7 @@ from sklearn.model_selection import ParameterGrid
 from sklearn.metrics import f1_score
 import numpy as np
 from keras.utils import print_summary
+import h5py
 
 
 class KerasModel(AbstractModel):
@@ -256,6 +257,22 @@ class KerasModel(AbstractModel):
                                 epochs=n_epochs)
         self.instance = estimator
 
+    def save(self, path: str, metadata: dict) -> None:
+        if self.instance is None:
+            self.logger.error("Attempting to save the model before grid search")
+            exit(1)
+        if not path.endswith("h5"):
+            self.logger.error("Keras model file must be '.h5'")
+            exit(1)
+        # Сохраняем саму модель
+        self.instance.save(path)
+        # Дописываем метаданные
+        # Не поддерживаются словари и множества
+        h5_file = h5py.File(path, "a")
+        md_dataset = h5_file.create_dataset("metadata", dtype=h5py.string_dtype())
+        for key, value in metadata:
+            md_dataset.attrs[key] = value
+        h5_file.close()
 
 if __name__ == '__main__':
     # import numpy as np

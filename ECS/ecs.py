@@ -237,9 +237,16 @@ def main():
                 exit(1)
             else:
                 try:
+                    refit_params = {
+                        "binary": binary,
+                        "conv_type": pooling,
+                        "dataset": dataset,
+                        "rubricator": rubricator,
+                    }
+                    logger.info(f"Fitting best parameters to model {model_name}")
                     model_interface.refit(best_params=best_params,
                                           x_train=x_train, y_train=y_train,
-                                          binary=binary)
+                                          **refit_params)
                 except OSError as ose:
                     state_str = f"(model: {model_name}, rubricator: {rubricator})"
                     error_ps(logger, f"OS has interrupted the refitting process: {ose} {state_str}")
