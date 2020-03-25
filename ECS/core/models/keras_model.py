@@ -12,6 +12,7 @@ from sklearn.model_selection import ParameterGrid
 from sklearn.metrics import f1_score
 import numpy as np
 from keras.utils import print_summary
+from keras.models import load_model
 import h5py
 
 
@@ -273,6 +274,19 @@ class KerasModel(AbstractModel):
         for key, value in metadata:
             md_dataset.attrs[key] = value
         h5_file.close()
+
+    def load(self, path: str):
+        if not path.endswith(".h5"):
+            self.logger.error(f"'{path}' is not a valid Keras model file name")
+            exit(1)
+        model = load_model(path)
+        h5_file = h5py.File(path, "r")
+        metadata = {}
+        if "metadata" in h5_file.keys():
+            metadata = dict(h5_file["metadata"].attrs)
+        self.instance = model
+        return model, metadata
+
 
 if __name__ == '__main__':
     # import numpy as np
