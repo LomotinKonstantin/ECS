@@ -258,9 +258,13 @@ def create_model_fname(model_name: str, language: str,
     :param vector_dim: размерность вектора
     :return: Сгенерированная строка
     """
+    if model_name == "keras":
+        extension = "h5"
+    else:
+        extension = "plk"
     meta_str = dump_metadata_to_str(model_name=model_name, language=language,
                                     rubricator=rubricator, pooling=pooling, vector_dim=vector_dim)
-    fname = f"clf_model_{meta_str}.plk"
+    fname = f"clf_model_{meta_str}.{extension}"
     return fname
 
 

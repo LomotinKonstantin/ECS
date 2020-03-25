@@ -196,6 +196,7 @@ def main():
                 hypers["probability"] = [True]
             try:
                 if model_name == "keras":
+                    logger.info("Loading Keras model tool")
                     model_interface = KerasModel()
                 else:
                     model_interface = SklearnModel(model_import_mapping[model_name])
@@ -266,11 +267,11 @@ def main():
                         **best_params
                     }
                     logger.info(f"Saving model to {model_path}")
-                    save_model(model=model_interface.instance, path=model_path, metadata=model_metadata)
+                    model_interface.save(path=model_path, metadata=model_metadata)
 
                     # Создаем и сохраняем отчеты
                     logger.info("Testing model and creating report")
-                    excel_report = create_report(model=model_interface.instance,
+                    excel_report = create_report(model=model_interface,
                                                  x_test=x_test,
                                                  y_test=y_test)
                     text_report = create_description(model_name=model_name,

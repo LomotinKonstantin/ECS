@@ -31,6 +31,7 @@ class KerasModel(AbstractModel):
         self.logger = logging.getLogger("Keras Model")
         self.logger.setLevel(logging.INFO)
         self.instance = None
+        self.is_recurrent_instance = False
 
     def _init_mappings(self):
         if self.class_mapping is None:
@@ -151,7 +152,7 @@ class KerasModel(AbstractModel):
     def data_transformer(matrices, labels,
                          is_recurrent: bool,
                          pooling_type: str,
-                         dataset: Dataset,
+                         dataset: Dataset or None,
                          rubricator: str,
                          n_epochs: int):
         epoch = 0
@@ -159,13 +160,21 @@ class KerasModel(AbstractModel):
             x_data = matrices
             if is_recurrent:
                 x_data = map(lambda matr: apply_pooling(matr, pooling_type), matrices)
-            y_data = map(lambda lab: dataset.oh_encode(lab, rubricator), labels)
-            for matrix, label in zip(x_data, y_data):
-                yield np.reshape(matrix, (1, -1)), np.reshape(label, (1, -1))
-            if n_epochs > 0:
-                epoch += 1
-                if epoch == n_epochs:
-                    return
+            if labels is not None:
+                y_data = map(lambda lab: dataset.oh_encode(lab, rubricator), labels)
+                for matrix, label in zip(x_data, y_data):
+                    yield np.reshape(matrix, (1, -1)), np.reshape(label, (1, -1))
+                if n_epochs > 0:
+                    epoch += 1
+                    if epoch == n_epochs:
+                        return
+            else:
+                for matrix, label in zip(x_data):
+                    yield np.reshape(matrix, (1, -1))
+                if n_epochs > 0:
+                    epoch += 1
+                    if epoch == n_epochs:
+                        return
 
     def evaluate_model(self, model, x_test, y_test, dataset: Dataset,
                        pooling_type: str, rubricator: str, is_recurrent: bool):
@@ -257,6 +266,7 @@ class KerasModel(AbstractModel):
                                 steps_per_epoch=steps_per_epoch,
                                 epochs=n_epochs)
         self.instance = estimator
+        self.is_recurrent_instance = is_recurrent
 
     def save(self, path: str, metadata: dict) -> None:
         if self.instance is None:
@@ -271,7 +281,8 @@ class KerasModel(AbstractModel):
         # Не поддерживаются словари и множества
         h5_file = h5py.File(path, "a")
         md_dataset = h5_file.create_dataset("metadata", dtype=h5py.string_dtype())
-        for key, value in metadata:
+        metadata["is_recurrent"] = self.is_recurrent_instance
+        for key, value in metadata.items():
             md_dataset.attrs[key] = value
         h5_file.close()
 
@@ -286,6 +297,27 @@ class KerasModel(AbstractModel):
             metadata = dict(h5_file["metadata"].attrs)
         self.instance = model
         return model, metadata
+
+    def predict_proba(self, data, **kwargs):
+        conv_type = kwargs["conv_type"]
+        if self.instance is None:
+            self.logger.error("No Keras instance was set up")
+            exit(1)
+        transformer = self.data_transformer(matrices=data, labels=None,
+                                            rubricator="",
+                                            pooling_type=conv_type,
+                                            dataset=None,
+                                            is_recurrent=self.is_recurrent_instance,
+                                            n_epochs=1)
+        predict_tensor = None
+        for matr in transformer:
+            predict_tensor = self.instance.predict(matr)[0]
+            if self.is_recurrent_instance:
+                predict_tensor = np.mean(axis=1)
+        if predict_tensor is None:
+            self.logger.error("Invalid data in predict proba (no data to transform)")
+            exit(1)
+        return predict_tensor
 
 
 if __name__ == '__main__':
