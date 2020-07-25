@@ -230,7 +230,7 @@ class ValidConfig(ConfigParser):
             val_logger.info("Using specified Word2Vec model: {}".format(use_model))
         else:
             val_logger.info("W2V model is not specified, new model will be created")
-        options = ("vector_dim", "pooling", "window")
+        options = ("vector_dim", "pooling", "window", "train_algorithm")
         for key in options:
             self.__check_option_entry(section, key)
             value = self.get(section, key)

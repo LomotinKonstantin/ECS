@@ -82,17 +82,20 @@ def caching_pp_generator(raw_file: str,
 
 def create_w2v(pp_sources: list,
                vector_dim: int,
-               window_size: int) -> Word2Vec:
+               window_size: int,
+               train_alg: str) -> Word2Vec:
     """
     Создать модель Word2Vec для предобработанных текстов.
     :param window_size: размер окна контекста
     :param vector_dim: размерность векторной модели
+    :param train_alg: тип алгоритма обучения word2vec (cbow или skip-gram)
     :param pp_sources: список инстансов генератора
                        предобработанных данных (pp_generator или caching_pp_generator)
     :returns обученная модель Word2Vec
     """
+    train_algoritm = {"cbow":0, "skip-gram":1} # to transform into word2vec param
     logger = get_logger("ecs.data_tools.create_w2v")
-    w2v = Word2Vec(size=vector_dim, min_count=3, workers=3, window=window_size)
+    w2v = Word2Vec(size=vector_dim, min_count=3, workers=3, window=window_size, sg=train_algoritm[train_alg])
     init = False
     for n_source, pp_source in enumerate(pp_sources, start=1):
         info_ps(logger, f"Training W2V on source {n_source}/{len(pp_sources)}")
