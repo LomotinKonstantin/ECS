@@ -125,6 +125,7 @@ def timestamp() -> str:
 
 def generate_w2v_fname(vector_dim: int,
                        language: str,
+                       train_algorithm: str,
                        version=1,
                        additional_info=None) -> str:
     """
@@ -132,6 +133,7 @@ def generate_w2v_fname(vector_dim: int,
     Для правильной работы ATC получает информацию о модели из имени файла.
     :param vector_dim: размерность векторной модели
     :param language: язык словаря
+    :param train_algorithm: тип алгоритма при обучении w2v
     :param version: [опционально] версия
     :param additional_info: [опционально] допольнительная короткая строка с информацией
     :return: сгенерированное имя файла
@@ -139,7 +141,7 @@ def generate_w2v_fname(vector_dim: int,
     import datetime
     now = datetime.datetime.today()
     date = f"{now.day}_{now.month}_{str(now.year)[2:]}"
-    name = f"w2v_model_{vector_dim}_{language}"
+    name = f"w2v_model_{vector_dim}_{language}_{train_algorithm}"
     if additional_info is None:
         name = f"{name}_v{version}_{date}.model"
     else:
