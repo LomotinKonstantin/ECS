@@ -476,7 +476,7 @@ def main():
         config.write(clear_copy_file)
     with open(os.path.join(vector_cache_folder, "settings.ini"), "w") as vector_copy_file:
         config.write(vector_copy_file)
-    w2v_fname = generate_w2v_fname(vector_dim=w2v_model.vector_size, language=language, train_algorithm=train_algorithm)
+    w2v_fname = generate_w2v_fname(vector_dim=w2v_model.vector_size, language=language)
     w2v_cache_path = os.path.join(vector_cache_folder, w2v_fname)
     w2v_save_path = os.path.join(exp_path, w2v_fname)
     w2v_model.save(w2v_cache_path)
