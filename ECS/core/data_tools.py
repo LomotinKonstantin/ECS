@@ -82,17 +82,20 @@ def caching_pp_generator(raw_file: str,
 
 def create_w2v(pp_sources: list,
                vector_dim: int,
-               window_size: int) -> Word2Vec:
+               window_size: int,
+               train_alg: str) -> Word2Vec:
     """
     Создать модель Word2Vec для предобработанных текстов.
     :param window_size: размер окна контекста
     :param vector_dim: размерность векторной модели
+    :param train_alg: тип алгоритма обучения word2vec (cbow или skip-gram)
     :param pp_sources: список инстансов генератора
                        предобработанных данных (pp_generator или caching_pp_generator)
     :returns обученная модель Word2Vec
     """
+    train_algoritm = {"cbow":0, "skip-gram":1} # to transform into word2vec param
     logger = get_logger("ecs.data_tools.create_w2v")
-    w2v = Word2Vec(size=vector_dim, min_count=3, workers=3, window=window_size)
+    w2v = Word2Vec(size=vector_dim, min_count=3, workers=3, window=window_size, sg=train_algoritm[train_alg])
     init = False
     for n_source, pp_source in enumerate(pp_sources, start=1):
         info_ps(logger, f"Training W2V on source {n_source}/{len(pp_sources)}")
@@ -122,6 +125,7 @@ def timestamp() -> str:
 
 def generate_w2v_fname(vector_dim: int,
                        language: str,
+                       train_algorithm: str,
                        version=1,
                        additional_info=None) -> str:
     """
@@ -129,6 +133,7 @@ def generate_w2v_fname(vector_dim: int,
     Для правильной работы ATC получает информацию о модели из имени файла.
     :param vector_dim: размерность векторной модели
     :param language: язык словаря
+    :param train_algorithm: тип алгоритма при обучении w2v
     :param version: [опционально] версия
     :param additional_info: [опционально] допольнительная короткая строка с информацией
     :return: сгенерированное имя файла
@@ -136,7 +141,7 @@ def generate_w2v_fname(vector_dim: int,
     import datetime
     now = datetime.datetime.today()
     date = f"{now.day}_{now.month}_{str(now.year)[2:]}"
-    name = f"w2v_model_{vector_dim}_{language}"
+    name = f"w2v_model_{vector_dim}_{language}_{train_algorithm}"
     if additional_info is None:
         name = f"{name}_v{version}_{date}.model"
     else:

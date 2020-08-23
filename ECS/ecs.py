@@ -345,6 +345,7 @@ def main():
     vector_dim = config.getint("WordEmbedding", "vector_dim")
     pooling = config.get("WordEmbedding", "pooling")
     window = config.getint("WordEmbedding", "window")
+    train_algorithm = config.get("WordEmbedding", "train_algorithm")
     binary = config.get_primitive("Experiment", "binary")
     rubricators = config.get_as_list("Experiment", "rubricator")
     n_jobs = config.getint("Experiment", "threads")
@@ -365,7 +366,7 @@ def main():
     vector_metadata_filter = {
         **clear_metadata_filter,
     }
-    for key in ["vector_dim", "window", "pooling"]:
+    for key in ["vector_dim", "window", "pooling", "train_algorithm"]:
         vector_metadata_filter[key] = config.get_primitive("WordEmbedding", key)
     # Создаем источники векторов согласно схеме
     total_timer = time()
@@ -419,7 +420,8 @@ def main():
             logger.info("Creating new Word2Vec model")
             w2v_model = create_w2v(pp_sources=list(pp_gens.values()),
                                    vector_dim=vector_dim,
-                                   window_size=window)
+                                   window_size=window,
+                                   train_alg=train_algorithm)
             # Увы, генераторы - это одноразовые итераторы
             # Придется создать их заново
             # Должны гарантированно получиться
@@ -474,7 +476,7 @@ def main():
         config.write(clear_copy_file)
     with open(os.path.join(vector_cache_folder, "settings.ini"), "w") as vector_copy_file:
         config.write(vector_copy_file)
-    w2v_fname = generate_w2v_fname(vector_dim=w2v_model.vector_size, language=language)
+    w2v_fname = generate_w2v_fname(vector_dim=w2v_model.vector_size, language=language, train_algorithm=train_algorithm)
     w2v_cache_path = os.path.join(vector_cache_folder, w2v_fname)
     w2v_save_path = os.path.join(exp_path, w2v_fname)
     w2v_model.save(w2v_cache_path)
