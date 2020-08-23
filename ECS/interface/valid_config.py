@@ -249,6 +249,10 @@ class ValidConfig(ConfigParser):
         val_assert(is_int(window) and int(window) > 0,
                    f"Invalid value of 'window': {window}\n"
                    f"Only positive integers are supported")
+        #
+        self.__check_option_entry(section, "train_algorithm")
+        supported_algorithms = parse_plain_sequence(self.map_config.get("Supported", "w2v_algorithm"))
+        self.__check_value(section, "train_algorithm", supported_algorithms, multiple_values=False)
 
     def validate_normalization(self, valid_lang: str) -> None:
         pp_map_config = ConfigParser()
