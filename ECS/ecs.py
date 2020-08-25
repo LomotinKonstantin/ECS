@@ -270,21 +270,25 @@ def inplace_drop_rubrics(x: list, y: list, rubrics) -> None:
             del x[ind]
 
 
-def inplace_rubric_filter(x: list, y: list, threshold: int) -> dict:
+def inplace_rubric_filter(x: list, y: list, limits: tuple) -> dict:
     """
     Убрать из выборки записи из рубрик, которые встречаются
     меньше, чем threshold раз
     !!! МЕНЯЕТ АРГУМЕНТЫ x И y !!!
 
-    :param threshold: минимальное количество текстов в рубрике
+    :param limits: кортеж (минимальное, максимальное) количество текстов в рубрике
     :param x: массив данных
     :param y: массив соответствующих меток классов
     :return: словарь удаленных рубрик с количеством текстов в каждой
     """
     # Считаем сколько текстов в рубриках
     c = Counter(y)
-    # Создаем фильтр для рубрик, размер которых ниже порога
-    to_drop = list(filter(lambda c_key: c[c_key] < threshold, c))
+    # Создаем фильтр для рубрик, размер которых не в указанных пределах
+    min_num, max_num = limits
+    assert min_num < max_num
+    if max_num < 0:
+        max_num = max(c.values())
+    to_drop = list(filter(lambda c_key: (c[c_key] < min_num) or (c[c_key] > max_num), c))
     res = {k: v for k, v in c.items() if k in to_drop}
     inplace_drop_rubrics(x, y, to_drop)
     return res
@@ -352,6 +356,8 @@ def main():
     n_folds = config.getint("Experiment", "n_folds")
     # Заплатка
     # TODO: починить
+    # *дьявольский голос из-за плеча*:
+    # - Оно работает, не трогай!
     test_percent = 0
     if not test_file:
         test_percent = config.getint("TrainingData", "test_percent")
@@ -502,16 +508,18 @@ def main():
             x_test, y_test = df_to_labeled_dataset(full_df=test_df, rubricator=rubricator)
         min_training_rubr = config.get_primitive(rubricator, "min_training_rubric", fallback="0") or 1
         min_test_rubr = config.get_primitive(rubricator, "min_validation_rubric", fallback="0") or 1
+        max_training_rubr = config.get_primitive(rubricator, "max_training_rubric", fallback="0") or -1
+        max_test_rubr = config.get_primitive(rubricator, "max_validation_rubric", fallback="0") or -1
         train_filter_res = {}
 
         if min_training_rubr > 1:
-            train_filter_res = inplace_rubric_filter(x_train, y_train, threshold=min_training_rubr)
+            train_filter_res = inplace_rubric_filter(x_train, y_train, limits=(min_training_rubr, max_training_rubr))
             log_str = f"Dropped rubrics from training dataset for {rubricator}:\n" + \
                       "\n".join([f"{k}\t({v} texts)" for k, v in train_filter_res.items()])
             logger.info(log_str)
         if min_test_rubr > 1:
             y_test_cntr = Counter(y_test)
-            test_filter_res = inplace_rubric_filter(x_test, y_test, threshold=min_test_rubr)
+            test_filter_res = inplace_rubric_filter(x_test, y_test, limits=(min_test_rubr, max_test_rubr))
             # В датасете тексты с множественными метками дублируются,
             # поэтому можно просто дропнуть записи с удаленными из train рубриками,
             # чтобы не учитывать их при тестировании
