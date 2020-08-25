@@ -512,12 +512,12 @@ def main():
         max_test_rubr = config.get_primitive(rubricator, "max_validation_rubric", fallback="0") or -1
         train_filter_res = {}
 
-        if min_training_rubr > 1:
+        if min_training_rubr > 1 or max_training_rubr > -1:
             train_filter_res = inplace_rubric_filter(x_train, y_train, limits=(min_training_rubr, max_training_rubr))
             log_str = f"Dropped rubrics from training dataset for {rubricator}:\n" + \
                       "\n".join([f"{k}\t({v} texts)" for k, v in train_filter_res.items()])
             logger.info(log_str)
-        if min_test_rubr > 1:
+        if min_test_rubr > 1 or max_test_rubr > -1:
             y_test_cntr = Counter(y_test)
             test_filter_res = inplace_rubric_filter(x_test, y_test, limits=(min_test_rubr, max_test_rubr))
             # В датасете тексты с множественными метками дублируются,

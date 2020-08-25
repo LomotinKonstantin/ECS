@@ -284,10 +284,12 @@ class ValidConfig(ConfigParser):
         """
         min_train = "min_training_rubric"
         min_test = "min_validation_rubric"
+        max_train = "max_training_rubric"
+        max_test = "max_validation_rubric"
         for rubr in ["subj", "ipv", "rgnti"]:
             if rubr not in self.sections():
                 continue
-            for option in [min_train, min_test]:
+            for option in (min_train, min_test, max_train, max_test):
                 if option in self.options(rubr):
                     value = self.get_primitive(rubr, option, fallback="0")
                     if value == "":
@@ -295,6 +297,14 @@ class ValidConfig(ConfigParser):
                     err_msg = f"Value of [{rubr}] '{option}' must be a non-negative integer (found {value})"
                     val_assert(is_int(value), err_msg)
                     val_assert(value >= 0, err_msg)
+            for min_opt, max_opt in ((min_train, max_train), (min_test, max_test)):
+                min_val = self.get_primitive(section=rubr, option=min_opt, fallback="0")
+                if not min_val:
+                    min_val = 0
+                max_val = self.get_primitive(rubr, max_opt, fallback=f"{min_val + 1}")
+                if not max_val:
+                    max_val = min_val + 1
+                val_assert(min_val <= max_val, f"Option '{min_opt}' must be less than '{max_opt}'")
 
     def validate_all(self):
         self.validate_dataset()
@@ -363,8 +373,3 @@ if __name__ == '__main__':
     config = ValidConfig()
     config.read(join(dirname(__file__), "../../test/test_settings", "settings.ini"), encoding="cp1251")
     config.validate_all()
-    # config.validate_dataset()
-    # config.validate_experiment()
-    # config.validate_preprocessing()
-    # config.validate_word_embedding()
-    # config.validate_classification()
