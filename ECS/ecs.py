@@ -600,7 +600,8 @@ def main():
                     # Пока эта информация не используется, но в будущем может пригодиться
                     model_metadata = {
                         **vector_metadata_filter,
-                        **best_params
+                        **best_params,
+                        "settings": {section: config.get_as_dict(section) for section in config.sections()}
                     }
                     logger.info(f"Saving model to {model_path}")
                     save_model(model=best_model, path=model_path, metadata=model_metadata)
