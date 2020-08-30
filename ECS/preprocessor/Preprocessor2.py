@@ -119,9 +119,6 @@ class Preprocessor:
         - Если данные нуждаются в дополнительной обработке до препроцессинга,
           можно обработать DataFrame: метод preprocess_dataframe(texts: DataFrame)
         - Обычный текст:    метод preprocess(text: str)
-
-    —
-    _
     """
     delim = " ☺☻ "
     sw_files = {"ru": "ru_stopwords.txt",
