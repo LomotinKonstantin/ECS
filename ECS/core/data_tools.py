@@ -337,18 +337,19 @@ def find_cached_clear(base_dir: str, metadata_filter: dict) -> dict:
     return clear_files
 
 
-def labeled_data_generator(vector_gen, rubricator: str) -> tuple:
+def labeled_data_generator(vector_gen, rubricator: str, grnti_level: int = 2) -> tuple:
     """
     Генератор обучающих пар (X, y)
     Так как большая часть моделей не умеет работать с несколькими метками у одного текста,
     векторы размножаются таким образом, чтобы каждому соответствовала только одна метка
+    :param grnti_level: 1, 2 или 3 уровень ГРНТИ
     :param rubricator: "subj", "ipv" или "rgnti"
     :param vector_gen: генератор векторов
     :return: пара (X, y), где X - numpy 2-D array,
                               y - list-like коллекция строковых меток
     """
     for vec_chunk in vector_gen:
-        yield df_to_labeled_dataset(vec_chunk, rubricator)
+        yield df_to_labeled_dataset(vec_chunk, rubricator, grnti_level=grnti_level)
 
 
 def aggregate_full_dataset(vector_gen) -> pd.DataFrame:
@@ -382,21 +383,27 @@ def aggregate_labeled_dataset(labeled_data_source) -> tuple:
 
 def create_labeled_tt_split(full_df: pd.DataFrame,
                             rubricator: str,
-                            test_percent: float) -> tuple:
-    x, y = df_to_labeled_dataset(full_df, rubricator)
+                            test_percent: float,
+                            grnti_level: int) -> tuple:
+    x, y = df_to_labeled_dataset(full_df, rubricator, grnti_level=grnti_level)
     return train_test_split(x, y, test_size=test_percent, shuffle=True)
 
 
-def df_to_labeled_dataset(full_df: pd.DataFrame, rubricator: str) -> tuple:
+def df_to_labeled_dataset(full_df: pd.DataFrame, rubricator: str, grnti_level: int = 2) -> tuple:
     x = []
     y = []
+    levels = {
+        1: 2,
+        2: 5,
+        3: 100
+    }
     for row in full_df.index:
         codes = full_df.loc[row, rubricator].split("\\")
         for code in codes:
             vec = full_df.loc[row, "vectors"]
             x.append(vec)
             if rubricator == "rgnti":
-                code = code[:5]
+                code = code[:levels[grnti_level]]
             y.append(code)
     return x, y
 

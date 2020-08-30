@@ -354,6 +354,7 @@ def main():
     rubricators = config.get_as_list("Experiment", "rubricator")
     n_jobs = config.getint("Experiment", "threads")
     n_folds = config.getint("Experiment", "n_folds")
+    grnti_level = config.getint("rgnti", "level", fallback=2)
     # Заплатка
     # TODO: починить
     # *дьявольский голос из-за плеча*:
@@ -449,7 +450,8 @@ def main():
                                                      conv_type=pooling,
                                                      pp_metadata=clear_metadata_filter)
         except Exception as e:
-            error_ps(logger, f"Error occurred during creation caching vector generator (training): {e}")
+            error_ps(logger,
+                     f"Error occurred during creation caching vector generator (training): {e}")
         else:
             vector_gens["train"] = train_vec_gen
         if test_file:
@@ -502,10 +504,15 @@ def main():
         if test_df is None:
             x_train, x_test, y_train, y_test = create_labeled_tt_split(full_df=training_df,
                                                                        test_percent=test_percent,
-                                                                       rubricator=rubricator)
+                                                                       rubricator=rubricator,
+                                                                       grnti_level=grnti_level)
         else:
-            x_train, y_train = df_to_labeled_dataset(full_df=training_df, rubricator=rubricator)
-            x_test, y_test = df_to_labeled_dataset(full_df=test_df, rubricator=rubricator)
+            x_train, y_train = df_to_labeled_dataset(full_df=training_df,
+                                                     rubricator=rubricator,
+                                                     grnti_level=grnti_level)
+            x_test, y_test = df_to_labeled_dataset(full_df=test_df,
+                                                   rubricator=rubricator,
+                                                   grnti_level=grnti_level)
         min_training_rubr = config.get_primitive(rubricator, "min_training_rubric", fallback="0") or 1
         min_test_rubr = config.get_primitive(rubricator, "min_validation_rubric", fallback="0") or 1
         max_training_rubr = config.get_primitive(rubricator, "max_training_rubric", fallback="0") or -1
@@ -513,13 +520,15 @@ def main():
         train_filter_res = {}
 
         if min_training_rubr > 1 or max_training_rubr > -1:
-            train_filter_res = inplace_rubric_filter(x_train, y_train, limits=(min_training_rubr, max_training_rubr))
+            train_filter_res = inplace_rubric_filter(x_train, y_train,
+                                                     limits=(min_training_rubr, max_training_rubr))
             log_str = f"Dropped rubrics from training dataset for {rubricator}:\n" + \
                       "\n".join([f"{k}\t({v} texts)" for k, v in train_filter_res.items()])
             logger.info(log_str)
         if min_test_rubr > 1 or max_test_rubr > -1:
             y_test_cntr = Counter(y_test)
-            test_filter_res = inplace_rubric_filter(x_test, y_test, limits=(min_test_rubr, max_test_rubr))
+            test_filter_res = inplace_rubric_filter(x_test, y_test,
+                                                    limits=(min_test_rubr, max_test_rubr))
             # В датасете тексты с множественными метками дублируются,
             # поэтому можно просто дропнуть записи с удаленными из train рубриками,
             # чтобы не учитывать их при тестировании
@@ -571,7 +580,7 @@ def main():
                                               n_jobs=n_jobs)
             except ValueError as ve:
                 logger.warning(f"\n>>> Detected incorrect hyperparameters ({ve}) for model '{model_name}'."
-                               f"It will be skipped.")
+                               f" It will be skipped.")
                 continue
             except OSError as ose:
                 state_str = f"(model: {model_name}, rubricator: {rubricator})"
