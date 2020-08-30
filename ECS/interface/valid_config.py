@@ -305,6 +305,12 @@ class ValidConfig(ConfigParser):
                 if not max_val:
                     max_val = min_val + 1
                 val_assert(min_val <= max_val, f"Option '{min_opt}' must be less than '{max_opt}'")
+        # Уровень ГРНТИ
+        if "rgnti" in self.sections():
+            msg = "GRNTI level must be either 1, 2 or 3"
+            self.__check_option_entry("rgnti", "level")
+            val_assert(is_int(self.get("rgnti", "level")), error_msg=msg)
+            self.__check_value("rgnti", "level", supported=[1, 2, 3], multiple_values=False)
 
     def validate_all(self):
         self.validate_dataset()
