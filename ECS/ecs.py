@@ -285,7 +285,6 @@ def inplace_rubric_filter(x: list, y: list, limits: tuple) -> dict:
     c = Counter(y)
     # Создаем фильтр для рубрик, размер которых не в указанных пределах
     min_num, max_num = limits
-    assert min_num < max_num
     if max_num < 0:
         max_num = max(c.values())
     to_drop = list(filter(lambda c_key: (c[c_key] < min_num) or (c[c_key] > max_num), c))
