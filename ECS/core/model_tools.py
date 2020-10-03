@@ -293,8 +293,8 @@ def count_stats(predicts: list, y_test: list,
 
     Возвращает словарь датафреймов. Ключи - '1'...'5' и 'all'
     """
-    legend = [item for sublist in predicts for item in sublist]
-    legend = pd.Series(map(str, legend))
+    legend = [str(item) for sublist in predicts for item in sublist]
+    legend = pd.Series(legend)
     legend = legend.unique()
     legend.sort()
     legend = list(legend)
