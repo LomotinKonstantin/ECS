@@ -1,0 +1,1 @@
+1.7.0 | 2020-10-04 | Исправлена ошибка MemoryError с map и pd.Series (HEAD -> master, tag: 1.7.0) [Konstantin Lomotin]
